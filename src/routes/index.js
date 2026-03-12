@@ -6,6 +6,7 @@ import memberRoutes from "./memberRoutes.js";
 import lecturerRoutes from "./lecturerRoutes.js";
 import jiraRoutes from "./jiraRoutes.js";
 import githubRoutes from "./githubRoutes.js";
+import reportRoutes from "./reportRoutes.js";
 
 const router = Router();
 
@@ -16,5 +17,6 @@ router.use("/groups/:groupId/members", memberRoutes);
 router.use("/groups/:groupId/lecturers", lecturerRoutes);
 router.use("/groups/:groupId/jira", jiraRoutes);
 router.use("/groups/:groupId/github", githubRoutes);
+router.use("/groups/:groupId/reports", reportRoutes);
 
 export default router;
