@@ -1,0 +1,158 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==================== ENUMS ====================
+
+enum Role {
+  ADMIN
+  LECTURER
+  TEAM_LEADER
+  MEMBER
+}
+
+enum RequirementType {
+  EPIC
+  STORY
+  TASK
+  BUG
+}
+
+enum RequirementStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  DONE
+}
+
+// ==================== MODELS ====================
+
+model User {
+  id             String   @id @default(cuid())
+  name           String
+  email          String   @unique
+  password       String?  // Nullable: user login bằng Google OAuth sẽ không có password
+  role           Role     @default(MEMBER)
+  githubUsername String?
+  jiraAccountId  String?
+  isActive       Boolean  @default(true)
+  googleId       String?  @unique // OAuth Google
+  avatar         String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  groupId        String?
+  group          Group?   @relation("GroupMembers", fields: [groupId], references: [id])
+  lecturingGroups Group[] @relation("GroupLecturer")
+  assignedTasks  Task[]   @relation("TaskAssignee")
+  createdTasks   Task[]   @relation("TaskCreator")
+  commits        Commit[]
+  srsDocuments   SRSDocument[]
+}
+
+model Group {
+  id             String   @id @default(cuid())
+  name           String
+  courseCode     String   @default("SWP391")
+  semester       String?
+  jiraProjectKey String?
+  githubRepoUrl  String?
+  jiraToken      String?  // Encrypted (BR-08)
+  githubToken    String?  // Encrypted (BR-08)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  lecturerId     String?
+  lecturer       User?    @relation("GroupLecturer", fields: [lecturerId], references: [id])
+  members        User[]   @relation("GroupMembers")
+  requirements   Requirement[]
+  tasks          Task[]
+  commits        Commit[]
+  srsDocuments   SRSDocument[]
+}
+
+model Requirement {
+  id            String            @id @default(cuid())
+  jiraIssueKey  String?
+  title         String
+  description   String?
+  type          RequirementType   @default(TASK)
+  status        RequirementStatus @default(TODO)
+  priority      Priority          @default(MEDIUM)
+  jiraSyncedAt  DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  // Relations
+  groupId       String
+  group         Group  @relation(fields: [groupId], references: [id])
+  tasks         Task[]
+}
+
+model Task {
+  id            String     @id @default(cuid())
+  title         String
+  description   String?
+  status        TaskStatus @default(TODO)
+  dueDate       DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  // Relations
+  groupId         String
+  group           Group        @relation(fields: [groupId], references: [id])
+  requirementId   String?
+  requirement     Requirement? @relation(fields: [requirementId], references: [id])
+  assigneeId      String?
+  assignee        User?        @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  assignedById    String?
+  assignedBy      User?        @relation("TaskCreator", fields: [assignedById], references: [id])
+}
+
+model Commit {
+  id          String   @id @default(cuid())
+  githubSha   String   @unique
+  message     String
+  committedAt DateTime
+  additions   Int      @default(0)
+  deletions   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  // Relations
+  groupId     String
+  group       Group  @relation(fields: [groupId], references: [id])
+  userId      String?
+  user        User?  @relation(fields: [userId], references: [id])
+}
+
+model SRSDocument {
+  id              String   @id @default(cuid())
+  version         String   @default("1.0")
+  fileUrl         String?
+  createdAt       DateTime @default(now())
+
+  // Relations
+  groupId         String
+  group           Group  @relation(fields: [groupId], references: [id])
+  generatedById   String
+  generatedBy     User   @relation(fields: [generatedById], references: [id])
+}

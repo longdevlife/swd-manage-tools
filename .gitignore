@@ -4,3 +4,9 @@ node_modules/
 dist/
 .DS_Store
 coverage/
+src/generated/
+
+# Bỏ qua các file tài liệu/MCP của AI để không commit lên Git
+PROJECT_KNOWLEDGE.md
+.agents/
+skills-lock.json
