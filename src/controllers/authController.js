@@ -12,7 +12,7 @@ const generateToken = (userId) =>
 // ── POST /api/auth/register ───────────────────────
 export const register = async (req, res, next) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { full_name, email, password, role_name } = req.body;
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
@@ -20,16 +20,33 @@ export const register = async (req, res, next) => {
     }
 
     const hashed = await bcrypt.hash(password, 12);
+    
+    // Tìm Role, nếu chưa có thì có thể báo lỗi hoặc tạo (ở đây tạm auto tạo nếu chưa có để demo)
+    const desiredRole = role_name || "MEMBER";
+    let roleRecord = await prisma.role.findUnique({ where: { role_name: desiredRole }});
+    if (!roleRecord) {
+      roleRecord = await prisma.role.create({ data: { role_name: desiredRole } });
+    }
+
     const user = await prisma.user.create({
-      data: { name, email, password: hashed, role: role || "MEMBER" },
+      data: { 
+        full_name, 
+        email, 
+        password: hashed,
+        user_roles: {
+           create: [{ role_id: roleRecord.role_id }]
+        }
+      },
+      include: { user_roles: { include: { role: true } } }
     });
 
-    const token = generateToken(user.id);
+    const token = generateToken(user.user_id);
+    const roles = user.user_roles.map(ur => ur.role.role_name);
 
     res.status(201).json({
       success: true,
       message: "Registered successfully",
-      data: { token, user: { id: user.id, name: user.name, email: user.email, role: user.role } },
+      data: { token, user: { user_id: user.user_id, full_name: user.full_name, email: user.email, roles } },
     });
   } catch (error) {
     next(error);
@@ -41,7 +58,11 @@ export const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({ 
+      where: { email },
+      include: { user_roles: { include: { role: true } } }
+    });
+
     if (!user || !user.password) {
       return res.status(401).json({ success: false, message: "Invalid email or password" });
     }
@@ -51,12 +72,13 @@ export const login = async (req, res, next) => {
       return res.status(401).json({ success: false, message: "Invalid email or password" });
     }
 
-    const token = generateToken(user.id);
+    const token = generateToken(user.user_id);
+    const roles = user.user_roles.map(ur => ur.role.role_name);
 
     res.status(200).json({
       success: true,
       message: "Login successful",
-      data: { token, user: { id: user.id, name: user.name, email: user.email, role: user.role } },
+      data: { token, user: { user_id: user.user_id, full_name: user.full_name, email: user.email, roles } },
     });
   } catch (error) {
     next(error);
@@ -67,8 +89,13 @@ export const login = async (req, res, next) => {
 export const getMe = async (req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      select: { id: true, name: true, email: true, role: true, avatar: true, githubUsername: true, groupId: true, createdAt: true },
+      where: { user_id: req.user.user_id },
+      include: { 
+        user_roles: { include: { role: true } },
+        group_memberships: { include: { student_group: true } },
+        group_leaderships: true,
+        lecturer_assignments: true
+      }
     });
 
     res.status(200).json({ success: true, data: { user } });
@@ -79,10 +106,8 @@ export const getMe = async (req, res, next) => {
 
 // ── GET /api/auth/google/callback (sau OAuth) ─────
 export const googleCallback = async (req, res) => {
-  // req.user được set bởi Passport strategy
-  const token = generateToken(req.user.id);
+  const token = generateToken(req.user.user_id);
 
-  // Redirect về frontend kèm token (hoặc trả JSON tùy frontend dùng gì)
   const clientUrl = process.env.CLIENT_URL || "http://localhost:3000";
   res.redirect(`${clientUrl}/auth/callback?token=${token}`);
 };

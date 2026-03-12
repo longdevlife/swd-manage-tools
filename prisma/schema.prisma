@@ -7,152 +7,161 @@ datasource db {
   provider = "postgresql"
 }
 
-// ==================== ENUMS ====================
-
-enum Role {
-  ADMIN
-  LECTURER
-  TEAM_LEADER
-  MEMBER
-}
-
-enum RequirementType {
-  EPIC
-  STORY
-  TASK
-  BUG
-}
-
-enum RequirementStatus {
-  TODO
-  IN_PROGRESS
-  DONE
-}
-
-enum Priority {
-  LOW
-  MEDIUM
-  HIGH
-}
-
-enum TaskStatus {
-  TODO
-  IN_PROGRESS
-  REVIEW
-  DONE
-}
-
-// ==================== MODELS ====================
-
 model User {
-  id             String   @id @default(cuid())
-  name           String
-  email          String   @unique
-  password       String?  // Nullable: user login bằng Google OAuth sẽ không có password
-  role           Role     @default(MEMBER)
-  githubUsername String?
-  jiraAccountId  String?
-  isActive       Boolean  @default(true)
-  googleId       String?  @unique // OAuth Google
-  avatar         String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  user_id         Int       @id @default(autoincrement())
+  full_name       String    @db.VarChar(150)
+  email           String    @unique @db.VarChar(150)
+  github_username String?   @db.VarChar(100)
+  is_active       Boolean   @default(true)
+  created_at      DateTime  @default(now())
 
-  // Relations
-  groupId        String?
-  group          Group?   @relation("GroupMembers", fields: [groupId], references: [id])
-  lecturingGroups Group[] @relation("GroupLecturer")
-  assignedTasks  Task[]   @relation("TaskAssignee")
-  createdTasks   Task[]   @relation("TaskCreator")
-  commits        Commit[]
-  srsDocuments   SRSDocument[]
+  // Bổ sung các trường phục vụ Auth (Login, Google OAuth)
+  password        String?
+  google_id       String?   @unique
+  avatar          String?
+
+  user_roles             User_Role[]
+  group_memberships      Group_Member[]
+  group_leaderships      Group_Leader[]
+  lecturer_assignments   Lecturer_Assignment[]
+  commit_records         Commit_Record[]
+  contribution_reports   Contribution_Report[]
 }
 
-model Group {
-  id             String   @id @default(cuid())
-  name           String
-  courseCode     String   @default("SWP391")
-  semester       String?
-  jiraProjectKey String?
-  githubRepoUrl  String?
-  jiraToken      String?  // Encrypted (BR-08)
-  githubToken    String?  // Encrypted (BR-08)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+model Role {
+  role_id    Int    @id @default(autoincrement())
+  role_name  String @unique @db.VarChar(50)
 
-  // Relations
-  lecturerId     String?
-  lecturer       User?    @relation("GroupLecturer", fields: [lecturerId], references: [id])
-  members        User[]   @relation("GroupMembers")
-  requirements   Requirement[]
-  tasks          Task[]
-  commits        Commit[]
-  srsDocuments   SRSDocument[]
+  user_roles     User_Role[]
 }
 
-model Requirement {
-  id            String            @id @default(cuid())
-  jiraIssueKey  String?
-  title         String
-  description   String?
-  type          RequirementType   @default(TASK)
-  status        RequirementStatus @default(TODO)
-  priority      Priority          @default(MEDIUM)
-  jiraSyncedAt  DateTime?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+model User_Role {
+  user_id     Int
+  role_id     Int
+  assigned_at DateTime @default(now())
 
-  // Relations
-  groupId       String
-  group         Group  @relation(fields: [groupId], references: [id])
-  tasks         Task[]
+  user User @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+  role Role @relation(fields: [role_id], references: [role_id], onDelete: Cascade)
+
+  @@id([user_id, role_id])
 }
 
-model Task {
-  id            String     @id @default(cuid())
-  title         String
-  description   String?
-  status        TaskStatus @default(TODO)
-  dueDate       DateTime?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+model Student_Group {
+  group_id      Int      @id @default(autoincrement())
+  group_name    String   @db.VarChar(100)
+  semester      String   @db.VarChar(50)
+  project_title String   @db.VarChar(200)
+  created_at    DateTime @default(now())
 
-  // Relations
-  groupId         String
-  group           Group        @relation(fields: [groupId], references: [id])
-  requirementId   String?
-  requirement     Requirement? @relation(fields: [requirementId], references: [id])
-  assigneeId      String?
-  assignee        User?        @relation("TaskAssignee", fields: [assigneeId], references: [id])
-  assignedById    String?
-  assignedBy      User?        @relation("TaskCreator", fields: [assignedById], references: [id])
+  group_members          Group_Member[]
+  group_leaders          Group_Leader[]
+  lecturer_assignments   Lecturer_Assignment[]
+  jira_project           Jira_Project?
+  git_repository         Git_Repository?
+  contribution_reports   Contribution_Report[]
 }
 
-model Commit {
-  id          String   @id @default(cuid())
-  githubSha   String   @unique
-  message     String
-  committedAt DateTime
-  additions   Int      @default(0)
-  deletions   Int      @default(0)
-  createdAt   DateTime @default(now())
+model Group_Member {
+  group_id  Int
+  user_id   Int
+  joined_at DateTime @default(now())
 
-  // Relations
-  groupId     String
-  group       Group  @relation(fields: [groupId], references: [id])
-  userId      String?
-  user        User?  @relation(fields: [userId], references: [id])
+  student_group Student_Group @relation(fields: [group_id], references: [group_id], onDelete: Cascade)
+  user          User          @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@id([group_id, user_id])
 }
 
-model SRSDocument {
-  id              String   @id @default(cuid())
-  version         String   @default("1.0")
-  fileUrl         String?
-  createdAt       DateTime @default(now())
+model Group_Leader {
+  group_id    Int      @id
+  user_id     Int
+  assigned_at DateTime @default(now())
 
-  // Relations
-  groupId         String
-  group           Group  @relation(fields: [groupId], references: [id])
-  generatedById   String
-  generatedBy     User   @relation(fields: [generatedById], references: [id])
+  student_group Student_Group @relation(fields: [group_id], references: [group_id], onDelete: Cascade)
+  user          User          @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+}
+
+model Lecturer_Assignment {
+  lecturer_id Int
+  group_id    Int
+  assigned_at DateTime @default(now())
+
+  user          User          @relation(fields: [lecturer_id], references: [user_id], onDelete: Cascade)
+  student_group Student_Group @relation(fields: [group_id], references: [group_id], onDelete: Cascade)
+
+  @@id([lecturer_id, group_id])
+}
+
+model Jira_Project {
+  jira_project_id Int    @id @default(autoincrement())
+  group_id        Int    @unique
+  project_key     String @db.VarChar(50)
+  project_name    String @db.VarChar(150)
+  base_url        String @db.VarChar(300)
+
+  student_group Student_Group @relation(fields: [group_id], references: [group_id], onDelete: Cascade)
+  jira_issues   Jira_Issue[]
+}
+
+model Jira_Issue {
+  jira_issue_id   Int      @id @default(autoincrement())
+  jira_project_id Int
+  issue_key       String   @db.VarChar(50)
+  issue_type      String   @db.VarChar(50)
+  summary         String   @db.VarChar(300)
+  status          String   @db.VarChar(50)
+  priority        String?  @db.VarChar(50)
+  created_at      DateTime
+
+  jira_project   Jira_Project   @relation(fields: [jira_project_id], references: [jira_project_id], onDelete: Cascade)
+  commit_issues  Commit_Issue[]
+}
+
+model Git_Repository {
+  repo_id   Int    @id @default(autoincrement())
+  group_id  Int    @unique
+  repo_name String @db.VarChar(150)
+  repo_url  String @db.VarChar(300)
+
+  student_group  Student_Group   @relation(fields: [group_id], references: [group_id], onDelete: Cascade)
+  commit_records Commit_Record[]
+}
+
+model Commit_Record {
+  commit_id      Int      @id @default(autoincrement())
+  repo_id        Int
+  author_id      Int
+  commit_hash    String   @unique @db.VarChar(100)
+  commit_message String?  @db.VarChar(500)
+  committed_at   DateTime
+  lines_added    Int      @default(0)
+  lines_deleted  Int      @default(0)
+
+  git_repository Git_Repository @relation(fields: [repo_id], references: [repo_id], onDelete: Cascade)
+  author         User           @relation(fields: [author_id], references: [user_id], onDelete: Cascade)
+  commit_issues  Commit_Issue[]
+}
+
+model Commit_Issue {
+  commit_id     Int
+  jira_issue_id Int
+
+  commit_record Commit_Record @relation(fields: [commit_id], references: [commit_id], onDelete: Cascade)
+  jira_issue    Jira_Issue    @relation(fields: [jira_issue_id], references: [jira_issue_id], onDelete: Cascade)
+
+  @@id([commit_id, jira_issue_id])
+}
+
+model Contribution_Report {
+  report_id             Int      @id @default(autoincrement())
+  group_id              Int
+  user_id               Int
+  total_commits         Int      @default(0)
+  total_issues_resolved Int      @default(0)
+  total_lines_added     Int      @default(0)
+  total_lines_deleted   Int      @default(0)
+  calculated_at         DateTime @default(now())
+
+  student_group Student_Group @relation(fields: [group_id], references: [group_id], onDelete: Cascade)
+  user          User          @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
 }

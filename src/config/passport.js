@@ -13,29 +13,33 @@ passport.use(
       try {
         const email = profile.emails?.[0]?.value;
         const avatar = profile.photos?.[0]?.value;
+        const full_name = profile.displayName;
 
-        // Tìm user theo googleId trước
-        let user = await prisma.user.findUnique({ where: { googleId: profile.id } });
+        let user = await prisma.user.findUnique({ where: { google_id: profile.id } });
 
         if (!user) {
-          // Tìm theo email (trường hợp đã đăng ký trước bằng email/pass)
           user = await prisma.user.findUnique({ where: { email } });
 
           if (user) {
-            // Link googleId vào account cũ
             user = await prisma.user.update({
-              where: { id: user.id },
-              data: { googleId: profile.id, avatar },
+              where: { user_id: user.user_id },
+              data: { google_id: profile.id, avatar },
             });
           } else {
-            // Tạo mới hoàn toàn
+            let roleRecord = await prisma.role.findUnique({ where: { role_name: "MEMBER" }});
+            if (!roleRecord) {
+               roleRecord = await prisma.role.create({ data: { role_name: "MEMBER" }});
+            }
+
             user = await prisma.user.create({
               data: {
-                name: profile.displayName,
+                full_name,
                 email,
-                googleId: profile.id,
+                google_id: profile.id,
                 avatar,
-                role: "MEMBER",
+                user_roles: {
+                  create: [{ role_id: roleRecord.role_id }]
+                }
               },
             });
           }
@@ -49,11 +53,10 @@ passport.use(
   )
 );
 
-// Serialize/deserialize chỉ lưu id vào session
-passport.serializeUser((user, done) => done(null, user.id));
+passport.serializeUser((user, done) => done(null, user.user_id));
 passport.deserializeUser(async (id, done) => {
   try {
-    const user = await prisma.user.findUnique({ where: { id } });
+    const user = await prisma.user.findUnique({ where: { user_id: id } });
     done(null, user);
   } catch (error) {
     done(error, null);
