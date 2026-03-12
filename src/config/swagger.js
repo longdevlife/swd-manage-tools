@@ -90,6 +90,7 @@ const options = {
       { name: 'Jira', description: 'Tích hợp Jira (Issues / Projects)' },
       { name: 'GitHub', description: 'Tích hợp GitHub (Repositories / Commits)' },
       { name: 'Reports', description: 'Báo cáo đóng góp' },
+      { name: 'Sync', description: 'Đồng bộ thủ công & tự động (Jira + GitHub + Reports)' },
     ],
   },
   apis: ['./src/routes/*.js', './src/docs/*.js'],

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { protect, authorize, sameGroupOnly } from "../middlewares/authMiddleware.js";
+import { protect, authorize, sameGroupOnly } from "../middlewares/index.js";
 import { manualSync } from "../controllers/syncController.js";
 
 const router = Router({ mergeParams: true });

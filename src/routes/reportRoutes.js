@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { protect, authorize, sameGroupOnly } from "../middlewares/authMiddleware.js";
+import { protect, authorize, sameGroupOnly } from "../middlewares/index.js";
 import { generateReport, getReports, getMyReport } from "../controllers/reportController.js";
 
 const router = Router({ mergeParams: true }); // mergeParams để lấy :groupId
