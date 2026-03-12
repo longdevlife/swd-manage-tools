@@ -121,10 +121,12 @@ model Jira_Issue {
 }
 
 model Git_Repository {
-  repo_id   Int    @id @default(autoincrement())
-  group_id  Int    @unique
-  repo_name String @db.VarChar(150)
-  repo_url  String @db.VarChar(300)
+  repo_id    Int    @id @default(autoincrement())
+  group_id   Int    @unique
+  repo_name  String @db.VarChar(150)
+  repo_url   String @db.VarChar(300)
+  owner      String @db.VarChar(100)    // GitHub owner/org name
+  github_pat String @db.VarChar(500)    // Encrypted PAT (BR-08)
 
   student_group  Student_Group   @relation(fields: [group_id], references: [group_id], onDelete: Cascade)
   commit_records Commit_Record[]
