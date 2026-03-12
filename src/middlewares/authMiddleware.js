@@ -48,19 +48,34 @@ export const authorize = (...allowedRoles) => {
   };
 };
 
-export const sameGroupOnly = (req, res, next) => {
-  const requestedGroupId = req.params.groupId || req.query.groupId || req.body.groupId;
+export const sameGroupOnly = async (req, res, next) => {
+  const requestedGroupId = parseInt(req.params.groupId || req.query.groupId || req.body.groupId);
 
+  // ADMIN bypass all scoping
   if (req.user.roles.includes("ADMIN")) return next();
 
-  // Kiểm tra user có thuộc Group_Member của requestedGroupId hay không
-  const belongsToGroup = req.user.group_memberships.some(gm => gm.group_id == requestedGroupId);
-  
-  if (requestedGroupId && !belongsToGroup) {
-    return res.status(403).json({
-      success: false,
-      message: "You can only access data from your own group. (BR-04)",
+  if (!requestedGroupId) return next();
+
+  // Check Group_Member
+  const isMember = req.user.group_memberships.some(gm => gm.group_id === requestedGroupId);
+  if (isMember) return next();
+
+  // Check Lecturer_Assignment (GV phụ trách nhóm)
+  if (req.user.roles.includes("LECTURER")) {
+    const prisma = (await import("../config/db.js")).default;
+    const assignment = await prisma.lecturer_Assignment.findUnique({
+      where: {
+        lecturer_id_group_id: {
+          lecturer_id: req.user.user_id,
+          group_id: requestedGroupId,
+        },
+      },
     });
+    if (assignment) return next();
   }
-  next();
+
+  return res.status(403).json({
+    success: false,
+    message: "You can only access data from your own group. (BR-04)",
+  });
 };

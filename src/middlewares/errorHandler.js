@@ -1,29 +1,35 @@
-// Global error handling middleware
+// Global error handling middleware – Prisma + JWT
 const errorHandler = (err, req, res, next) => {
   let statusCode = err.statusCode || 500;
   let message = err.message || "Internal Server Error";
 
-  // Mongoose bad ObjectId
-  if (err.name === "CastError") {
+  // ── Prisma Errors ──────────────────────────────────
+  // P2002: Unique constraint violation
+  if (err.code === "P2002") {
     statusCode = 400;
-    message = "Resource not found (invalid ID format)";
+    const fields = err.meta?.target?.join(", ") || "unknown field";
+    message = `Duplicate value for: ${fields}. Please use another value.`;
   }
 
-  // Mongoose duplicate key
-  if (err.code === 11000) {
-    statusCode = 400;
-    const field = Object.keys(err.keyValue).join(", ");
-    message = `Duplicate field value: ${field}. Please use another value.`;
+  // P2025: Record not found
+  if (err.code === "P2025") {
+    statusCode = 404;
+    message = err.meta?.cause || "Record not found.";
   }
 
-  // Mongoose validation error
-  if (err.name === "ValidationError") {
+  // P2003: Foreign key constraint failed
+  if (err.code === "P2003") {
     statusCode = 400;
-    const messages = Object.values(err.errors).map((val) => val.message);
-    message = messages.join(". ");
+    message = `Related record not found for field: ${err.meta?.field_name || "unknown"}.`;
   }
 
-  // JWT errors
+  // P2014: Required relation violation
+  if (err.code === "P2014") {
+    statusCode = 400;
+    message = "Required relation violation.";
+  }
+
+  // ── JWT Errors ─────────────────────────────────────
   if (err.name === "JsonWebTokenError") {
     statusCode = 401;
     message = "Invalid token";
@@ -32,6 +38,12 @@ const errorHandler = (err, req, res, next) => {
   if (err.name === "TokenExpiredError") {
     statusCode = 401;
     message = "Token expired";
+  }
+
+  // ── Validation Errors ──────────────────────────────
+  if (err.name === "ValidationError") {
+    statusCode = 400;
+    message = err.message;
   }
 
   console.error(`❌ Error: ${message}`);
