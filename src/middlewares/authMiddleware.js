@@ -62,7 +62,7 @@ export const sameGroupOnly = async (req, res, next) => {
 
   // Check Lecturer_Assignment (GV phụ trách nhóm)
   if (req.user.roles.includes("LECTURER")) {
-    const prisma = (await import("../config/db.js")).default;
+
     const assignment = await prisma.lecturer_Assignment.findUnique({
       where: {
         lecturer_id_group_id: {
