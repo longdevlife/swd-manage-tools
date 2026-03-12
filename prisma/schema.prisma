@@ -98,6 +98,8 @@ model Jira_Project {
   project_key     String @db.VarChar(50)
   project_name    String @db.VarChar(150)
   base_url        String @db.VarChar(300)
+  jira_email      String @db.VarChar(150)
+  jira_api_token  String @db.VarChar(500) // Encrypted (BR-08)
 
   student_group Student_Group @relation(fields: [group_id], references: [group_id], onDelete: Cascade)
   jira_issues   Jira_Issue[]
@@ -111,6 +113,7 @@ model Jira_Issue {
   summary         String   @db.VarChar(300)
   status          String   @db.VarChar(50)
   priority        String?  @db.VarChar(50)
+  assignee_email  String?  @db.VarChar(150)
   created_at      DateTime
 
   jira_project   Jira_Project   @relation(fields: [jira_project_id], references: [jira_project_id], onDelete: Cascade)
