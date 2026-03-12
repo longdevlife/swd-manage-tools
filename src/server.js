@@ -10,6 +10,7 @@ import passportConfig from "./config/passport.js";
 import routes from "./routes/index.js";
 import { errorHandler } from "./middlewares/index.js";
 import swaggerSpec from "./config/swagger.js";
+import { initCronJobs } from "./jobs/cronJobs.js";
 
 // Load env vars
 dotenv.config();
@@ -107,6 +108,9 @@ app.listen(PORT, () => {
   console.log(`📖 API Docs: http://localhost:${PORT}/api/docs`);
   console.log(`📋 Raw Spec: http://localhost:${PORT}/api/docs/spec`);
   console.log(`🗄️  Database: Neon PostgreSQL (Prisma v7)\n`);
+
+  // Khởi tạo Cron Jobs (Phase 10)
+  initCronJobs();
 });
 
 export default app;
