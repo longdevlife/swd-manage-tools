@@ -1,4 +1,4 @@
-// JiraAdapter – Gọi Jira REST API (v2)
+// JiraAdapter – Gọi Jira REST API (v3)
 // Tất cả giao tiếp với Jira đều đi qua adapter này
 import axios from "axios";
 
@@ -12,7 +12,7 @@ class JiraAdapter {
     // Bỏ trailing slash
     this.baseUrl = baseUrl.replace(/\/+$/, "");
     this.client = axios.create({
-      baseURL: `${this.baseUrl}/rest/api/2`,
+      baseURL: `${this.baseUrl}/rest/api/3`,
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
