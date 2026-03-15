@@ -4,8 +4,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import {
-  getJiraConfigApi, configureJiraApi, syncJiraIssuesApi,
-  getJiraIssuesApi, updateIssueStatusApi, assignIssueApi,
+  getJiraConfigApi,
+  configureJiraApi,
+  syncJiraIssuesApi,
+  getJiraIssuesApi,
+  updateIssueStatusApi,
+  assignIssueApi,
 } from '../api/jiraApi';
 
 import { QUERY_KEYS } from '@/config/constants';
@@ -72,8 +76,7 @@ export function useUpdateIssueStatus(groupId) {
 export function useAssignIssue(groupId) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ issueId, assignee_email }) =>
-      assignIssueApi(groupId, issueId, { assignee_email }),
+    mutationFn: ({ issueId, userId }) => assignIssueApi(groupId, issueId, { user_id: userId }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.JIRA.ALL(groupId) });
       toast.success('Gán task thành công!');

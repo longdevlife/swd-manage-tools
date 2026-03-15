@@ -131,6 +131,7 @@ export function LecturerConsolePage() {
     setIssuesLoading(true);
     try {
       const allIssues = [];
+      let failedGroups = 0;
       for (const g of targetGroups) {
         try {
           const res = await getJiraIssuesApi(g.id);
@@ -142,9 +143,17 @@ export function LecturerConsolePage() {
             uiStatus: STATUS_MAP[issue.status] || 'todo',
             uiPriority: PRIORITY_MAP[issue.priority] || 'medium',
           }));
-        } catch { /* skip */ }
+        } catch {
+          failedGroups += 1;
+        }
       }
       setIssues(allIssues);
+
+      if (failedGroups > 0) {
+        toast.warning(
+          `${failedGroups}/${targetGroups.length} nhóm chưa lấy được Jira issues. Kiểm tra Jira config hoặc chạy sync.`,
+        );
+      }
     } catch {
       toast.error('Không thể tải Jira issues');
     } finally {
@@ -186,10 +195,25 @@ export function LecturerConsolePage() {
     if (targetGroups.length === 0) return;
     setSyncing(true);
     try {
+      let successCount = 0;
+      let failedCount = 0;
       for (const g of targetGroups) {
-        await manualSyncApi(g.id).catch(() => null);
+        try {
+          await manualSyncApi(g.id);
+          successCount += 1;
+        } catch {
+          failedCount += 1;
+        }
       }
-      toast.success('Đồng bộ dữ liệu thành công!');
+
+      if (failedCount === 0) {
+        toast.success('Đồng bộ dữ liệu thành công!');
+      } else if (successCount > 0) {
+        toast.warning(`Đồng bộ một phần: ${successCount} thành công, ${failedCount} thất bại.`);
+      } else {
+        toast.error('Đồng bộ thất bại cho tất cả nhóm đã chọn');
+      }
+
       if (activeTab === 'issues') fetchIssues();
       if (activeTab === 'students') fetchData();
     } catch {
@@ -317,7 +341,7 @@ export function LecturerConsolePage() {
           })}
         </div>
         <Select value={filterGroup} onValueChange={setFilterGroup}>
-          <SelectTrigger className="w-full sm:w-[200px]">
+          <SelectTrigger className="w-full sm:w-50">
             <SelectValue placeholder="Filter by group" />
           </SelectTrigger>
           <SelectContent>
@@ -452,7 +476,7 @@ export function LecturerConsolePage() {
                       return (
                         <TableRow key={`${issue.groupId}-${issue.issue_key}`}>
                           <TableCell className="font-mono text-xs text-primary">{issue.issue_key}</TableCell>
-                          <TableCell className="font-medium max-w-[300px] truncate">{issue.summary}</TableCell>
+                          <TableCell className="font-medium max-w-75 truncate">{issue.summary}</TableCell>
                           <TableCell><Badge variant="outline" className="text-xs">{issue.groupName}</Badge></TableCell>
                           <TableCell className="text-sm">{issue.assignee_email || '—'}</TableCell>
                           <TableCell>
