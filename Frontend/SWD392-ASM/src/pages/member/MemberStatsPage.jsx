@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
+import { useSelector } from 'react-redux';
 import {
   GitCommit,
   CheckCircle2,
@@ -8,9 +9,7 @@ import {
   FileCode,
   Plus,
   Minus,
-  ArrowUpRight,
   BarChart3,
-  Clock,
   Target,
   CircleDot,
   Timer,
@@ -18,6 +17,7 @@ import {
   CirclePause,
 } from 'lucide-react';
 
+import { selectCurrentUser } from '@/stores/authSlice';
 import { PageHeader } from '@/components/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -31,16 +31,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Separator } from '@/components/ui/separator';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-
-import { useSelector } from 'react-redux';
-import { selectCurrentUser } from '@/stores/authSlice';
 import { getJiraIssuesApi } from '@/features/jira/api/jiraApi';
 import { getCommitsApi, getCommitStatsApi } from '@/features/github/api/githubApi';
 import { getMyReportApi } from '@/features/reports/api/reportsApi';
@@ -103,7 +93,6 @@ export function MemberStatsPage() {
   const user = useSelector(selectCurrentUser);
   const activeGroupId = useSelector((state) => state.ui?.activeGroupId);
   const groupId = activeGroupId || user?.groups?.[0]?.group_id;
-  const [timeRange, setTimeRange] = useState('week');
   const [taskStats, setTaskStats] = useState({ total: 0, todo: 0, inProgress: 0, inReview: 0, done: 0, completionRate: 0, sprintPoints: { completed: 0, total: 0 } });
   const [recentTasks, setRecentTasks] = useState([]);
   const [commitHistory, setCommitHistory] = useState([]);
@@ -111,90 +100,96 @@ export function MemberStatsPage() {
   const [myReport, setMyReport] = useState(null);
   const [commitStats, setCommitStats] = useState(null);
 
-  const fetchData = useCallback(async () => {
+  useEffect(() => {
     if (!groupId) return;
-    try {
-      // Fetch Jira issues for this user
-      const issuesRes = await getJiraIssuesApi(groupId).catch(() => ({ data: [] }));
-      const allIssues = Array.isArray(issuesRes?.data) ? issuesRes.data : Array.isArray(issuesRes) ? issuesRes : [];
-      const myIssues = user?.email ? allIssues.filter((i) => i.assignee_email === user.email) : allIssues;
-      const mapped = myIssues.map((i) => ({ ...i, _status: STATUS_MAP[i.status] || 'todo' }));
-      const todo = mapped.filter((t) => t._status === 'todo').length;
-      const inProg = mapped.filter((t) => t._status === 'in_progress').length;
-      const inRev = mapped.filter((t) => t._status === 'in_review').length;
-      const done = mapped.filter((t) => t._status === 'done').length;
-      const total = mapped.length;
-      setTaskStats({
-        total,
-        todo,
-        inProgress: inProg,
-        inReview: inRev,
-        done,
-        completionRate: total > 0 ? Math.round((done / total) * 100 * 10) / 10 : 0,
-        sprintPoints: { completed: done, total },
-      });
-      setRecentTasks(mapped.slice(0, 5).map((i) => ({
-        id: i.issue_key || i.id,
-        title: i.summary || '',
-        status: i._status,
-        completedDate: i._status === 'done' ? i.updated_at || null : null,
-        storyPoints: 1,
-      })));
+    let cancelled = false;
+    (async () => {
+      try {
+        // Fetch Jira issues for this user
+        const issuesRes = await getJiraIssuesApi(groupId).catch(() => ({ data: [] }));
+        const allIssues = Array.isArray(issuesRes?.data) ? issuesRes.data : Array.isArray(issuesRes) ? issuesRes : [];
+        const myIssues = user?.email ? allIssues.filter((i) => i.assignee_email === user.email) : allIssues;
+        const mapped = myIssues.map((i) => ({ ...i, _status: STATUS_MAP[i.status] || 'todo' }));
+        const todo = mapped.filter((t) => t._status === 'todo').length;
+        const inProg = mapped.filter((t) => t._status === 'in_progress').length;
+        const inRev = mapped.filter((t) => t._status === 'in_review').length;
+        const done = mapped.filter((t) => t._status === 'done').length;
+        const total = mapped.length;
+        if (cancelled) return;
+        setTaskStats({
+          total,
+          todo,
+          inProgress: inProg,
+          inReview: inRev,
+          done,
+          completionRate: total > 0 ? Math.round((done / total) * 100 * 10) / 10 : 0,
+          sprintPoints: { completed: done, total },
+        });
+        setRecentTasks(mapped.slice(0, 5).map((i) => ({
+          id: i.issue_key || i.id,
+          title: i.summary || '',
+          status: i._status,
+          completedDate: i._status === 'done' ? i.updated_at || null : null,
+          storyPoints: 1,
+        })));
 
-      // Fetch GitHub commits
-      const commitsRes = await getCommitsApi(groupId).catch(() => ({ data: [] }));
-      const commits = Array.isArray(commitsRes?.data) ? commitsRes.data : Array.isArray(commitsRes) ? commitsRes : [];
-      const myCommits = user?.email ? commits.filter((c) => (c.author_email || c.author || '').includes(user.email.split('@')[0])) : commits;
-      setCommitHistory(myCommits.slice(0, 7).map((c) => {
-        const d = c.committed_at || c.created_at || '';
-        const dateObj = d ? new Date(d) : null;
-        return {
-          sha: (c.sha || c.commit_sha || '').slice(0, 7),
-          message: c.message || c.commit_message || '',
-          date: dateObj ? dateObj.toISOString().split('T')[0] : '',
-          time: dateObj ? dateObj.toTimeString().slice(0, 5) : '',
-          filesChanged: c.files_changed || 0,
-          additions: c.additions || 0,
-          deletions: c.deletions || 0,
-          qualityScore: 85,
-          branch: c.branch || 'main',
-        };
-      }));
+        // Fetch GitHub commits
+        const commitsRes = await getCommitsApi(groupId).catch(() => ({ data: [] }));
+        const commits = Array.isArray(commitsRes?.data) ? commitsRes.data : Array.isArray(commitsRes) ? commitsRes : [];
+        const myCommits = user?.email ? commits.filter((c) => (c.author_email || c.author || '').includes(user.email.split('@')[0])) : commits;
+        if (cancelled) return;
+        setCommitHistory(myCommits.slice(0, 7).map((c) => {
+          const d = c.committed_at || c.created_at || '';
+          const dateObj = d ? new Date(d) : null;
+          return {
+            sha: (c.sha || c.commit_sha || '').slice(0, 7),
+            message: c.message || c.commit_message || '',
+            date: dateObj ? dateObj.toISOString().split('T')[0] : '',
+            time: dateObj ? dateObj.toTimeString().slice(0, 5) : '',
+            filesChanged: c.files_changed || 0,
+            additions: c.additions || 0,
+            deletions: c.deletions || 0,
+            qualityScore: 85,
+            branch: c.branch || 'main',
+          };
+        }));
 
-      // Compute daily commits (last 7 days)
-      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      const daily = Array.from({ length: 7 }, (_, i) => {
-        const d = new Date();
-        d.setDate(d.getDate() - (6 - i));
-        const dateStr = `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
-        const dayKey = d.toISOString().split('T')[0];
-        const count = myCommits.filter((c) => (c.committed_at || c.created_at || '').startsWith(dayKey)).length;
-        return { day: days[d.getDay()], date: dateStr, count };
-      });
-      setDailyCommits(daily);
+        // Compute daily commits (last 7 days)
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const daily = Array.from({ length: 7 }, (_, i) => {
+          const d = new Date();
+          d.setDate(d.getDate() - (6 - i));
+          const dateStr = `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+          const dayKey = d.toISOString().split('T')[0];
+          const count = myCommits.filter((c) => (c.committed_at || c.created_at || '').startsWith(dayKey)).length;
+          return { day: days[d.getDay()], date: dateStr, count };
+        });
+        setDailyCommits(daily);
 
-      // Fetch personal contribution report
-      const reportRes = await getMyReportApi(groupId).catch(() => null);
-      if (reportRes?.data || reportRes) {
-        setMyReport(reportRes?.data ?? reportRes);
-      }
+        // Fetch personal contribution report
+        const reportRes = await getMyReportApi(groupId).catch(() => null);
+        if (!cancelled && (reportRes?.data || reportRes)) {
+          setMyReport(reportRes?.data ?? reportRes);
+        }
 
-      // Fetch commit stats comparison
-      const statsRes = await getCommitStatsApi(groupId).catch(() => null);
-      if (statsRes?.data || statsRes) {
-        setCommitStats(statsRes?.data ?? statsRes);
-      }
-    } catch { /* empty */ }
+        // Fetch commit stats comparison
+        const statsRes = await getCommitStatsApi(groupId).catch(() => null);
+        if (!cancelled && (statsRes?.data || statsRes)) {
+          setCommitStats(statsRes?.data ?? statsRes);
+        }
+      } catch { /* empty */ }
+    })();
+    return () => { cancelled = true; };
   }, [groupId, user?.email]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
   const totalCommits = commitHistory.length;
-  const avgQuality = Math.round(
+  const avgQuality = totalCommits > 0 ? Math.round(
     commitHistory.reduce((sum, c) => sum + c.qualityScore, 0) / totalCommits,
-  );
+  ) : 0;
   const totalAdditions = commitHistory.reduce((sum, c) => sum + c.additions, 0);
   const totalDeletions = commitHistory.reduce((sum, c) => sum + c.deletions, 0);
   const maxCommits = Math.max(...dailyCommits.map((d) => d.count), 1);
+  const myContribution = myReport?.contribution_percentage?.commits || 0;
+  const teamAvgCommits = commitStats?.average_commits || 0;
 
   // Overview stats
   const overviewStats = [
@@ -245,19 +240,7 @@ export function MemberStatsPage() {
       {/* Header */}
       <PageHeader
         title="My Statistics"
-        description="Personal statistics for your tasks and commits."
-        actions={
-          <Select value={timeRange} onValueChange={setTimeRange}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="week">Last 7 days</SelectItem>
-              <SelectItem value="sprint">This Sprint</SelectItem>
-              <SelectItem value="month">This Month</SelectItem>
-            </SelectContent>
-          </Select>
-        }
+        description={`Personal statistics • Contribution: ${myContribution}% • Team avg: ${teamAvgCommits} commits`}
       />
 
       {/* Overview Stats */}
@@ -513,7 +496,6 @@ export function MemberStatsPage() {
             {/* GitHub Link */}
             <div className="flex justify-end pt-2">
               <Button variant="outline" size="sm" className="gap-1.5">
-                <ArrowUpRight size={14} />
                 View on GitHub
               </Button>
             </div>
