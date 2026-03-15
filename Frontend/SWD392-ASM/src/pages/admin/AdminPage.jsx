@@ -54,10 +54,13 @@ import { Separator } from '@/components/ui/separator';
 import {
   getGroupsApi,
   createGroupApi,
+  updateGroupApi,
   deleteGroupApi,
   addMemberApi,
   removeMemberApi,
   assignLeaderApi,
+  getLecturersApi,
+  assignLecturerApi,
   removeLecturerApi,
 } from '@/features/groups/api/groupsApi';
 import { getUsersApi } from '@/features/users/api/usersApi';
@@ -70,13 +73,19 @@ const getAllGroups = () => getGroupsApi();
 const createGroup = (data) => createGroupApi(data);
 const deleteGroup = (groupId) => deleteGroupApi(groupId);
 const addMember = (groupId, userId) =>
-  addMemberApi(groupId, { userId });
+  addMemberApi(groupId, { user_id: userId });
 const removeMember = (groupId, userId) =>
   removeMemberApi(groupId, userId);
 const assignLeader = (groupId, leaderId) =>
-  assignLeaderApi(groupId, { userId: leaderId });
-const removeLecturer = (groupId) =>
-  removeLecturerApi(groupId, null); // Backend route: DELETE /groups/:id/lecturers/:lecturerId
+  assignLeaderApi(groupId, { user_id: leaderId });
+const removeLecturer = (groupId, lecturerId) =>
+  removeLecturerApi(groupId, lecturerId);
+const updateGroup = (groupId, data) =>
+  updateGroupApi(groupId, data);
+const getLecturersForGroup = (groupId) =>
+  getLecturersApi(groupId);
+const assignLecturerToGroup = (groupId, lecturerId) =>
+  assignLecturerApi(groupId, { lecturer_id: lecturerId });
 const createJiraProject = (groupId, data) =>
   configureJiraApi(groupId, data);
 // Stubs — backend chưa có routes cho các chức năng này
@@ -86,6 +95,33 @@ const rejectRequest = () => Promise.reject(new Error('API chưa được triển
 const testJiraConnection = () => Promise.resolve({ status: 'ok' });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// Map BE snake_case Prisma response → FE camelCase format
+const mapGroup = (g) => ({
+  groupId: g.group_id,
+  groupName: g.group_name,
+  semester: g.semester,
+  projectTitle: g.project_title,
+  members: (g.group_members || []).map((m) => ({
+    userId: m.user?.user_id ?? m.user_id,
+    username: m.user?.full_name ?? m.user?.email ?? `User #${m.user_id}`,
+    email: m.user?.email,
+    role: 'ROLE_MEMBER',
+  })),
+  teamLeader: g.group_leaders?.[0]
+    ? {
+        userId: g.group_leaders[0].user?.user_id ?? g.group_leaders[0].user_id,
+        username: g.group_leaders[0].user?.full_name ?? `User #${g.group_leaders[0].user_id}`,
+      }
+    : null,
+  lecturer: g.lecturer_assignments?.[0]
+    ? {
+        userId: g.lecturer_assignments[0].user?.user_id ?? g.lecturer_assignments[0].lecturer_id,
+        username: g.lecturer_assignments[0].user?.full_name ?? `Lecturer #${g.lecturer_assignments[0].lecturer_id}`,
+      }
+    : null,
+  projectKey: g.jira_config?.project_key ?? null,
+});
 
 const ROLE_BADGE_VARIANT = {
   ROLE_ADMIN: 'destructive',
@@ -286,8 +322,10 @@ function GroupsTab() {
     setLoading(true);
     try {
       const [grps, usrs] = await Promise.all([getAllGroups(), getUsers('ALL')]);
-      setGroups(Array.isArray(grps) ? grps : []);
-      setAllUsers(Array.isArray(usrs) ? usrs : []);
+      const rawGroups = Array.isArray(grps?.data) ? grps.data : Array.isArray(grps) ? grps : [];
+      setGroups(rawGroups.map(mapGroup));
+      const rawUsers = Array.isArray(usrs?.data) ? usrs.data : Array.isArray(usrs) ? usrs : [];
+      setAllUsers(rawUsers);
     } catch {
       toast.error('Không thể tải dữ liệu');
     } finally {
@@ -307,9 +345,9 @@ function GroupsTab() {
     setCreateLoading(true);
     try {
       const payload = {
-        groupName: createData.groupName.trim(),
-        leaderId: createData.leaderId ? Number(createData.leaderId) : undefined,
-        memberIds: createData.memberIds.map(Number),
+        group_name: createData.groupName.trim(),
+        semester: createData.semester?.trim() || 'Default',
+        project_title: createData.projectTitle?.trim() || createData.groupName.trim(),
       };
       await createGroup(payload);
       toast.success('Tạo nhóm thành công!');
@@ -383,10 +421,10 @@ function GroupsTab() {
     }
   };
 
-  const handleRemoveLecturer = async (groupId, groupName) => {
+  const handleRemoveLecturer = async (groupId, groupName, lecturerId) => {
     if (!window.confirm(`Xoá giảng viên khỏi nhóm "${groupName}"?`)) return;
     try {
-      await removeLecturer(groupId);
+      await removeLecturer(groupId, lecturerId);
       toast.success('Đã xoá giảng viên khỏi nhóm');
       fetchData();
     } catch {
@@ -402,8 +440,8 @@ function GroupsTab() {
     setJiraLoading(true);
     try {
       await createJiraProject(jiraDialog.groupId, {
-        projectKey: jiraData.projectKey.trim().toUpperCase(),
-        projectName: jiraData.projectName.trim(),
+        project_key: jiraData.projectKey.trim().toUpperCase(),
+        project_name: jiraData.projectName.trim(),
       });
       toast.success('Tạo dự án Jira thành công!');
       setJiraDialog({ open: false, groupId: null, groupName: '' });
@@ -552,7 +590,7 @@ function GroupsTab() {
                               variant="ghost"
                               size="sm"
                               title="Xoá giảng viên"
-                              onClick={() => handleRemoveLecturer(g.groupId, g.groupName)}
+                              onClick={() => handleRemoveLecturer(g.groupId, g.groupName, g.lecturer.userId)}
                             >
                               <UserMinus size={14} />
                             </Button>

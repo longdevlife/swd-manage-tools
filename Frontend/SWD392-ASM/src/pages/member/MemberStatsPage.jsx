@@ -42,7 +42,8 @@ import {
 import { useSelector } from 'react-redux';
 import { selectCurrentUser } from '@/stores/authSlice';
 import { getJiraIssuesApi } from '@/features/jira/api/jiraApi';
-import { getCommitsApi } from '@/features/github/api/githubApi';
+import { getCommitsApi, getCommitStatsApi } from '@/features/github/api/githubApi';
+import { getMyReportApi } from '@/features/reports/api/reportsApi';
 
 // ─── Status Mapping ────────────────────────────────────────────────────────────
 const STATUS_MAP = {
@@ -107,6 +108,8 @@ export function MemberStatsPage() {
   const [recentTasks, setRecentTasks] = useState([]);
   const [commitHistory, setCommitHistory] = useState([]);
   const [dailyCommits, setDailyCommits] = useState([]);
+  const [myReport, setMyReport] = useState(null);
+  const [commitStats, setCommitStats] = useState(null);
 
   const fetchData = useCallback(async () => {
     if (!groupId) return;
@@ -169,6 +172,18 @@ export function MemberStatsPage() {
         return { day: days[d.getDay()], date: dateStr, count };
       });
       setDailyCommits(daily);
+
+      // Fetch personal contribution report
+      const reportRes = await getMyReportApi(groupId).catch(() => null);
+      if (reportRes?.data || reportRes) {
+        setMyReport(reportRes?.data ?? reportRes);
+      }
+
+      // Fetch commit stats comparison
+      const statsRes = await getCommitStatsApi(groupId).catch(() => null);
+      if (statsRes?.data || statsRes) {
+        setCommitStats(statsRes?.data ?? statsRes);
+      }
     } catch { /* empty */ }
   }, [groupId, user?.email]);
 

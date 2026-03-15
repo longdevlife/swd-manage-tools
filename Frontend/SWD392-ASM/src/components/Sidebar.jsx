@@ -175,9 +175,37 @@ export function Sidebar({ collapsed, onToggleCollapse }) {
       ? leaderNavSections
       : mainNavSections;
 
-  // Append admin section for ROLE_ADMIN users
+  // Normalize role: strip ROLE_ prefix for comparison
+  const normalizedRole = (userRole || '').replace(/^ROLE_/i, '');
+
+  // Append role-specific sections
+  const roleSections = [];
+
+  // Leader section for LEADER/ADMIN
+  if (['LEADER', 'ADMIN'].includes(normalizedRole) && !isLeaderRoute && !isLectureRoute) {
+    roleSections.push({
+      title: 'LEADER',
+      items: [
+        { to: '/leader/tasks', icon: ClipboardList, label: 'Task Management' },
+        { to: '/leader/reports', icon: BarChart3, label: 'Reports' },
+      ],
+    });
+  }
+
+  // Lecture section for LECTURER/ADMIN
+  if (['LECTURER', 'ADMIN'].includes(normalizedRole) && !isLectureRoute && !isLeaderRoute) {
+    roleSections.push({
+      title: 'LECTURE',
+      items: [
+        { to: '/lecture', icon: GraduationCap, label: 'Lecturer Console', end: true },
+        { to: '/lecture/github', icon: Github, label: 'GitHub Connector' },
+      ],
+    });
+  }
+
+  // Admin section for ADMIN only
   const adminSection =
-    userRole === 'ROLE_ADMIN'
+    normalizedRole === 'ADMIN'
       ? [
         {
           title: 'ADMIN',
@@ -186,7 +214,7 @@ export function Sidebar({ collapsed, onToggleCollapse }) {
       ]
       : [];
 
-  const navSections = [...baseNavSections, ...adminSection];
+  const navSections = [...baseNavSections, ...roleSections, ...adminSection];
 
   return (
     <aside

@@ -1,14 +1,21 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
-import { Loader2, Mail, Lock, User, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Mail, Lock, User, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { loginApi, registerApi, getGoogleLoginUrl } from '@/features/auth/api/authApi';
 import { setCredentials } from '@/stores/authSlice';
+
+const ROLE_OPTIONS = [
+  { value: 'MEMBER', label: 'Member (Sinh viên)' },
+  { value: 'LEADER', label: 'Leader (Trưởng nhóm)' },
+  { value: 'LECTURER', label: 'Lecturer (Giảng viên)' },
+];
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -23,6 +30,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [githubUsername, setGithubUsername] = useState('');
+  const [roleName, setRoleName] = useState('MEMBER');
 
   // ── Google OAuth ──────────────────────────────
   const handleGoogleLogin = () => {
@@ -41,7 +49,12 @@ export function LoginPage() {
     try {
       const res = await loginApi({ email, password });
       const data = res?.data || res;
-      dispatch(setCredentials({ user: data.data?.user || data.user, token: data.data?.token || data.token }));
+      const rawUser = data.data?.user || data.user;
+      const token = data.data?.token || data.token;
+      // Normalize: ensure both 'role' (string) and 'roles' (array) exist
+      const roles = rawUser?.roles || [];
+      const userObj = { ...rawUser, roles, role: roles[0] || 'MEMBER' };
+      dispatch(setCredentials({ user: userObj, token }));
       toast.success('Đăng nhập thành công!');
       navigate('/dashboard');
     } catch (err) {
@@ -60,9 +73,14 @@ export function LoginPage() {
     }
     setIsLoading(true);
     try {
-      const res = await registerApi({ full_name: fullName, email, password, github_username: githubUsername || undefined });
+      const res = await registerApi({ full_name: fullName, email, password, role_name: roleName, github_username: githubUsername || undefined });
       const data = res?.data || res;
-      dispatch(setCredentials({ user: data.data?.user || data.user, token: data.data?.token || data.token }));
+      const rawUser = data.data?.user || data.user;
+      const token = data.data?.token || data.token;
+      // Normalize: ensure both 'role' (string) and 'roles' (array) exist
+      const roles = rawUser?.roles || [];
+      const userObj = { ...rawUser, roles, role: roles[0] || roleName || 'MEMBER' };
+      dispatch(setCredentials({ user: userObj, token }));
       toast.success('Đăng ký thành công!');
       navigate('/dashboard');
     } catch (err) {
@@ -143,6 +161,28 @@ export function LoginPage() {
             </button>
           </div>
         </div>
+
+        {/* Register: Role selection */}
+        {mode === 'register' && (
+          <div className="grid gap-2">
+            <Label>Role</Label>
+            <Select value={roleName} onValueChange={setRoleName}>
+              <SelectTrigger className="w-full">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+                  <SelectValue placeholder="Select your role" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                {ROLE_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {/* Register: GitHub username */}
         {mode === 'register' && (

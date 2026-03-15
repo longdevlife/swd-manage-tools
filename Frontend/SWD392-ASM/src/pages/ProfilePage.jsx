@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { selectCurrentUser, setUser } from '@/stores/authSlice';
-import axiosClient from '@/services/axiosClient';
+import { updateUserProfileApi } from '@/features/users/api/usersApi';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -93,8 +93,8 @@ export function ProfilePage() {
 
         setIsLoading(true);
         try {
-            const res = await axiosClient.put(`/users/${currentUser.id || currentUser.user_id}`, {
-                username: form.username.trim(),
+            const res = await updateUserProfileApi(currentUser.id || currentUser.user_id, {
+                full_name: form.username.trim(),
                 email: form.email.trim(),
                 phoneNumber: form.phoneNumber.trim() || undefined,
                 yob: form.yob ? Number(form.yob) : undefined,

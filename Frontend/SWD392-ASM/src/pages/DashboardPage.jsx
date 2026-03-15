@@ -10,14 +10,18 @@ import {
   AlertCircle,
   ArrowUpRight,
   Activity,
+  RefreshCw,
 } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 
 import { getGroupsApi, getMembersApi } from '@/features/groups/api/groupsApi';
 import { getJiraIssuesApi } from '@/features/jira/api/jiraApi';
 import { getCommitsApi } from '@/features/github/api/githubApi';
+import { manualSyncApi } from '@/features/sync/api/syncApi';
 
 // ─── Status Mapping ────────────────────────────────────────────────────────────
 const STATUS_MAP = {
@@ -53,6 +57,22 @@ export function DashboardPage() {
   const [recentTasks, setRecentTasks] = useState([]);
   const [recentCommits, setRecentCommits] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+
+  // Full sync: Jira + GitHub
+  const handleFullSync = async () => {
+    if (!groupId) return;
+    setSyncing(true);
+    try {
+      await manualSyncApi(groupId);
+      toast.success('Đồng bộ dữ liệu thành công!');
+      fetchDashboard();
+    } catch {
+      toast.error('Đồng bộ thất bại');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const fetchDashboard = useCallback(async () => {
     if (!groupId && role !== 'admin') {
@@ -214,15 +234,23 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{greeting}</h1>
-        <p className="text-sm text-muted-foreground">
-          {loading
-            ? 'Loading data...'
-            : role === 'admin'
-              ? 'System overview and management'
-              : `Group overview — ${stats.totalTasks} tasks, ${stats.members} members`}
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">{greeting}</h1>
+          <p className="text-sm text-muted-foreground">
+            {loading
+              ? 'Loading data...'
+              : role === 'admin'
+                ? 'System overview and management'
+                : `Group overview — ${stats.totalTasks} tasks, ${stats.members} members`}
+          </p>
+        </div>
+        {role !== 'admin' && (
+          <Button variant="outline" onClick={handleFullSync} disabled={syncing}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+            Sync Data
+          </Button>
+        )}
       </div>
 
       {/* Stats Grid */}

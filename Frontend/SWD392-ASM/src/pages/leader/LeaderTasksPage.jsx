@@ -19,6 +19,7 @@ import {
     MoreHorizontal,
     Pencil,
     Trash2,
+    RefreshCw,
 } from 'lucide-react';
 
 import { PageHeader } from '@/components/PageHeader';
@@ -59,7 +60,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 
-import { getJiraIssuesApi, assignIssueApi } from '@/features/jira/api/jiraApi';
+import { getJiraIssuesApi, assignIssueApi, syncJiraIssuesApi, updateIssueStatusApi } from '@/features/jira/api/jiraApi';
 import { getMembersApi } from '@/features/groups/api/groupsApi';
 
 // ─── Data Mapping ─────────────────────────────────────────────────────────────
@@ -197,6 +198,7 @@ export function LeaderTasksPage() {
     const [selectedTask, setSelectedTask] = useState(null);
     const [assignDialogOpen, setAssignDialogOpen] = useState(false);
     const [assignTarget, setAssignTarget] = useState(null);
+    const [syncing, setSyncing] = useState(false);
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
     const [newTask, setNewTask] = useState({
         title: '',
@@ -243,6 +245,33 @@ export function LeaderTasksPage() {
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    // Sync Jira issues
+    const handleSyncJira = async () => {
+        if (!groupId) return;
+        setSyncing(true);
+        try {
+            await syncJiraIssuesApi(groupId);
+            toast.success('Đồng bộ Jira thành công!');
+            fetchData();
+        } catch {
+            toast.error('Đồng bộ Jira thất bại');
+        } finally {
+            setSyncing(false);
+        }
+    };
+
+    // Update issue status
+    const handleStatusChange = async (issueId, newStatus) => {
+        if (!groupId) return;
+        try {
+            await updateIssueStatusApi(groupId, issueId, { status: newStatus });
+            toast.success('Cập nhật trạng thái thành công!');
+            fetchData();
+        } catch {
+            toast.error('Cập nhật trạng thái thất bại');
+        }
+    };
 
     // Filter logic
     const filteredTasks = tasks.filter((task) => {
@@ -353,10 +382,16 @@ export function LeaderTasksPage() {
                 title="Task Management"
                 description="Quản lý và phân công task cho các thành viên trong nhóm."
                 actions={
-                    <Button onClick={() => setCreateDialogOpen(true)}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Create Task
-                    </Button>
+                    <div className="flex gap-2">
+                        <Button variant="outline" onClick={handleSyncJira} disabled={syncing}>
+                            <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+                            Sync Jira
+                        </Button>
+                        <Button onClick={() => setCreateDialogOpen(true)}>
+                            <Plus className="mr-2 h-4 w-4" />
+                            Create Task
+                        </Button>
+                    </div>
                 }
             />
 

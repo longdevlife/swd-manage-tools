@@ -15,6 +15,7 @@ import {
   Timer,
   CircleCheck,
   CirclePause,
+  RefreshCw,
 } from 'lucide-react';
 
 import { PageHeader } from '@/components/PageHeader';
@@ -40,7 +41,8 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 
-import { getJiraIssuesApi } from '@/features/jira/api/jiraApi';
+import { getJiraIssuesApi, updateIssueStatusApi, syncJiraIssuesApi } from '@/features/jira/api/jiraApi';
+import { toast } from 'sonner';
 
 // ─── Data Mapping ────────────────────────────────────────────────────────────
 const STATUS_MAP = {
@@ -151,6 +153,34 @@ export function MemberTasksPage() {
   }, [groupId, user?.email]);
 
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
+
+  // Update task status
+  const handleStatusChange = async (issueId, newStatus) => {
+    if (!groupId) return;
+    try {
+      await updateIssueStatusApi(groupId, issueId, { status: newStatus });
+      toast.success('Cập nhật trạng thái thành công!');
+      fetchTasks();
+    } catch {
+      toast.error('Cập nhật trạng thái thất bại');
+    }
+  };
+
+  // Sync from Jira
+  const [syncing, setSyncing] = useState(false);
+  const handleSync = async () => {
+    if (!groupId) return;
+    setSyncing(true);
+    try {
+      await syncJiraIssuesApi(groupId);
+      toast.success('Đồng bộ Jira thành công!');
+      fetchTasks();
+    } catch {
+      toast.error('Đồng bộ thất bại');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   // Filter logic
   const filteredTasks = tasks.filter((task) => {
