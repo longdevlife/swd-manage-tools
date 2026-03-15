@@ -1,6 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useSelector } from 'react-redux';
-import { selectCurrentUser } from '@/stores/authSlice';
 import {
   ListTodo,
   Clock,
@@ -17,6 +15,8 @@ import {
   CirclePause,
   RefreshCw,
 } from 'lucide-react';
+import { useSelector } from 'react-redux';
+import { toast } from 'sonner';
 
 import { PageHeader } from '@/components/PageHeader';
 import { Badge } from '@/components/ui/badge';
@@ -40,20 +40,39 @@ import {
 } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
-
-import { getJiraIssuesApi, updateIssueStatusApi, syncJiraIssuesApi } from '@/features/jira/api/jiraApi';
-import { toast } from 'sonner';
+import {
+  getJiraIssuesApi,
+  updateIssueStatusApi,
+  syncJiraIssuesApi,
+} from '@/features/jira/api/jiraApi';
+import { getGroupsApi } from '@/features/groups/api/groupsApi';
+import { selectCurrentUser } from '@/stores/authSlice';
 
 // ─── Data Mapping ────────────────────────────────────────────────────────────
 const STATUS_MAP = {
-  'To Do': 'todo', 'In Progress': 'in_progress', 'In Review': 'in_review',
-  'Done': 'done', 'Closed': 'done', 'Resolved': 'done',
+  'To Do': 'todo',
+  'In Progress': 'in_progress',
+  'In Review': 'in_review',
+  Done: 'done',
+  Closed: 'done',
+  Resolved: 'done',
+};
+const UI_TO_JIRA_STATUS = {
+  todo: 'To Do',
+  in_progress: 'In Progress',
+  in_review: 'In Review',
+  done: 'Done',
 };
 const PRIORITY_MAP = {
-  Highest: 'urgent', High: 'high', Medium: 'medium', Low: 'low', Lowest: 'low',
+  Highest: 'urgent',
+  High: 'high',
+  Medium: 'medium',
+  Low: 'low',
+  Lowest: 'low',
 };
 const mapIssue = (issue) => ({
   id: issue.issue_key,
+  jiraIssueId: issue.jira_issue_id,
   title: issue.summary,
   description: issue.issue_type || '',
   sprint: '',
@@ -131,7 +150,14 @@ function isOverdue(dateStr, status) {
 export function MemberTasksPage() {
   const user = useSelector(selectCurrentUser);
   const activeGroupId = useSelector((state) => state.ui?.activeGroupId);
-  const groupId = activeGroupId || user?.groups?.[0]?.group_id;
+  const groupIdFromUser =
+    activeGroupId ||
+    user?.groups?.[0]?.group_id ||
+    user?.group_memberships?.[0]?.group_id ||
+    user?.group_memberships?.[0]?.student_group?.group_id ||
+    user?.group_leaderships?.[0]?.group_id;
+
+  const [groupId, setGroupId] = useState(groupIdFromUser ? Number(groupIdFromUser) : null);
 
   const [tasks, setTasks] = useState([]);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -139,37 +165,72 @@ export function MemberTasksPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTask, setSelectedTask] = useState(null);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolveGroup = async () => {
+      if (groupIdFromUser) {
+        if (!cancelled) setGroupId(Number(groupIdFromUser));
+        return;
+      }
+
+      try {
+        const res = await getGroupsApi();
+        const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+        const firstGroupId = list?.[0]?.group_id || list?.[0]?.id || null;
+        if (!cancelled) setGroupId(firstGroupId ? Number(firstGroupId) : null);
+      } catch {
+        if (!cancelled) setGroupId(null);
+      }
+    };
+
+    resolveGroup();
+    return () => {
+      cancelled = true;
+    };
+  }, [groupIdFromUser]);
+
   const fetchTasks = useCallback(async () => {
     if (!groupId) return;
     try {
       const res = await getJiraIssuesApi(groupId);
-      const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
+      const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
       // Filter by current user email
-      const myIssues = user?.email
-        ? list.filter((i) => i.assignee_email === user.email)
-        : list;
+      const myIssues = user?.email ? list.filter((i) => i.assignee_email === user.email) : list;
       setTasks(myIssues.map(mapIssue));
-    } catch { /* empty */ }
+    } catch {
+      /* empty */
+    }
   }, [groupId, user?.email]);
 
-  useEffect(() => { fetchTasks(); }, [fetchTasks]);
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
 
   // Update task status
   const handleStatusChange = async (issueId, newStatus) => {
-    if (!groupId) { toast.warning('Bạn chưa thuộc nhóm nào.'); return; }
+    if (!groupId) {
+      toast.warning('Bạn chưa thuộc nhóm nào.');
+      return false;
+    }
     try {
       await updateIssueStatusApi(groupId, issueId, { status: newStatus });
       toast.success('Cập nhật trạng thái thành công!');
-      fetchTasks();
+      await fetchTasks();
+      return true;
     } catch (err) {
       toast.error(err?.response?.data?.message || 'Cập nhật trạng thái thất bại');
+      return false;
     }
   };
 
   // Sync from Jira
   const [syncing, setSyncing] = useState(false);
   const handleSync = async () => {
-    if (!groupId) { toast.warning('Bạn chưa thuộc nhóm nào. Liên hệ Admin để được thêm vào nhóm.'); return; }
+    if (!groupId) {
+      toast.warning('Bạn chưa thuộc nhóm nào. Liên hệ Admin để được thêm vào nhóm.');
+      return;
+    }
     setSyncing(true);
     try {
       await syncJiraIssuesApi(groupId);
@@ -180,6 +241,22 @@ export function MemberTasksPage() {
     } finally {
       setSyncing(false);
     }
+  };
+
+  const handleSelectedTaskStatusChange = async (uiStatus) => {
+    if (!selectedTask) return;
+
+    const jiraStatus = UI_TO_JIRA_STATUS[uiStatus];
+    if (!jiraStatus) return;
+
+    const issueRef = selectedTask.jiraIssueId || selectedTask.id;
+    const updated = await handleStatusChange(issueRef, jiraStatus);
+    if (!updated) return;
+
+    setSelectedTask((prev) => (prev ? { ...prev, status: uiStatus } : prev));
+    setTasks((prev) =>
+      prev.map((task) => (task.id === selectedTask.id ? { ...task, status: uiStatus } : task)),
+    );
   };
 
   // Filter logic
@@ -237,7 +314,16 @@ export function MemberTasksPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <PageHeader title="My Tasks" description="List of tasks assigned to you from Jira." />
+      <PageHeader
+        title="My Tasks"
+        description="List of tasks assigned to you from Jira."
+        actions={
+          <Button variant="outline" onClick={handleSync} disabled={syncing}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+            Sync Jira
+          </Button>
+        }
+      />
 
       {/* Stats */}
       <Card>
@@ -282,7 +368,7 @@ export function MemberTasksPage() {
               <Filter size={16} />
               <span className="font-medium">Filters:</span>
             </div>
-            <div className="relative flex-1 min-w-[200px] max-w-sm">
+            <div className="relative flex-1 min-w-50 max-w-sm">
               <Search
                 size={16}
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
@@ -450,6 +536,21 @@ export function MemberTasksPage() {
                 <Badge variant="outline" className="font-mono">
                   SP: {selectedTask.storyPoints}
                 </Badge>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="text-sm font-semibold">Update Status</h4>
+                <Select value={selectedTask.status} onValueChange={handleSelectedTaskStatusChange}>
+                  <SelectTrigger className="w-52">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todo">To Do</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="in_review">In Review</SelectItem>
+                    <SelectItem value="done">Done</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <Separator />

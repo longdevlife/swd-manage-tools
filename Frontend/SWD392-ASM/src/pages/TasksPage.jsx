@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSelector } from 'react-redux';
-import { Plus } from 'lucide-react';
+import { Plus, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { selectCurrentUser } from '@/stores/authSlice';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
-import { getJiraIssuesApi } from '@/features/jira/api/jiraApi';
+import { getJiraIssuesApi, syncJiraIssuesApi } from '@/features/jira/api/jiraApi';
 
 const STATUS_MAP = {
   'To Do': 'todo',
@@ -30,9 +31,15 @@ export function TasksPage() {
   const activeGroupId = useSelector((state) => state.ui?.activeGroupId);
   const groupId = activeGroupId || user?.groups?.[0]?.group_id;
   const [tasks, setTasks] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   const fetchTasks = useCallback(async () => {
-    if (!groupId) return;
+    if (!groupId) {
+      setTasks([]);
+      return;
+    }
+    setLoading(true);
     try {
       const res = await getJiraIssuesApi(groupId);
       const issues = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
@@ -44,10 +51,31 @@ export function TasksPage() {
           priority: (i.priority || '').toLowerCase(),
         })),
       );
-    } catch {
-      /* empty */
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Không tải được Jira issues');
+      setTasks([]);
+    } finally {
+      setLoading(false);
     }
   }, [groupId]);
+
+  const handleSync = async () => {
+    if (!groupId) {
+      toast.warning('Bạn chưa thuộc nhóm nào.');
+      return;
+    }
+
+    setSyncing(true);
+    try {
+      await syncJiraIssuesApi(groupId);
+      toast.success('Đồng bộ Jira thành công');
+      await fetchTasks();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Đồng bộ Jira thất bại');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   useEffect(() => {
     fetchTasks();
@@ -60,17 +88,27 @@ export function TasksPage() {
           <h1 className="text-2xl font-bold tracking-tight">Tasks</h1>
           <p className="text-sm text-muted-foreground">Team task management</p>
         </div>
-        <Button>
-          <Plus className="mr-2 h-4 w-4" />
-          Create New
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleSync} disabled={syncing || loading}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+            Sync Jira
+          </Button>
+          <Button>
+            <Plus className="mr-2 h-4 w-4" />
+            Create New
+          </Button>
+        </div>
       </div>
 
       {/* Task Cards */}
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {tasks.length === 0 ? (
+        {loading ? (
           <p className="text-sm text-muted-foreground col-span-full text-center py-8">
-            No tasks found
+            Loading tasks...
+          </p>
+        ) : tasks.length === 0 ? (
+          <p className="text-sm text-muted-foreground col-span-full text-center py-8">
+            No tasks found. Try syncing Jira first.
           </p>
         ) : (
           tasks.map((task) => {

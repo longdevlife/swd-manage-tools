@@ -1,11 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSelector } from 'react-redux';
-import { selectCurrentUser } from '@/stores/authSlice';
-import {
-  Settings, Save, Loader2, CheckCircle2, AlertTriangle, ExternalLink,
-} from 'lucide-react';
+import { Settings, Save, Loader2, CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { selectCurrentUser } from '@/stores/authSlice';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -13,9 +11,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select';
-
 import { getGroupsApi } from '@/features/groups/api/groupsApi';
 import { getJiraConfigApi, configureJiraApi } from '@/features/jira/api/jiraApi';
 import { getGitHubConfigApi, configureGitHubApi } from '@/features/github/api/githubApi';
@@ -26,10 +27,14 @@ export function LectureSettingsPage() {
 
   const [groups, setGroups] = useState([]);
   const [selectedGroup, setSelectedGroup] = useState('');
-  const [loading, setLoading] = useState(true);
 
   // ── Jira config state ──
-  const [jiraConfig, setJiraConfig] = useState({ base_url: '', project_key: '', email: '', api_token: '' });
+  const [jiraConfig, setJiraConfig] = useState({
+    base_url: '',
+    project_key: '',
+    jira_email: '',
+    jira_api_token: '',
+  });
   const [jiraConnected, setJiraConnected] = useState(false);
   const [jiraSaving, setJiraSaving] = useState(false);
 
@@ -43,14 +48,20 @@ export function LectureSettingsPage() {
     (async () => {
       try {
         const res = await getGroupsApi();
-        const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
-        setGroups(list.map((g) => ({ id: g.group_id || g.id, name: g.group_name || g.name || `Group ${g.group_id}` })));
-        const defaultGid = activeGroupId || user?.groups?.[0]?.group_id || (list[0] && (list[0].group_id || list[0].id));
+        const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+        setGroups(
+          list.map((g) => ({
+            id: g.group_id || g.id,
+            name: g.group_name || g.name || `Group ${g.group_id}`,
+          })),
+        );
+        const defaultGid =
+          activeGroupId ||
+          user?.groups?.[0]?.group_id ||
+          (list[0] && (list[0].group_id || list[0].id));
         if (defaultGid) setSelectedGroup(String(defaultGid));
       } catch {
         toast.error('Could not load groups');
-      } finally {
-        setLoading(false);
       }
     })();
   }, [activeGroupId, user]);
@@ -66,12 +77,12 @@ export function LectureSettingsPage() {
       setJiraConfig({
         base_url: data.base_url || data.jira_base_url || '',
         project_key: data.project_key || data.jira_project_key || '',
-        email: data.email || data.jira_email || '',
-        api_token: data.api_token ? '••••••••' : '',
+        jira_email: data.jira_email || data.email || '',
+        jira_api_token: data.jira_email || data.email ? '••••••••' : '',
       });
       setJiraConnected(!!(data.base_url || data.jira_base_url));
     } catch {
-      setJiraConfig({ base_url: '', project_key: '', email: '', api_token: '' });
+      setJiraConfig({ base_url: '', project_key: '', jira_email: '', jira_api_token: '' });
       setJiraConnected(false);
     }
     // GitHub config
@@ -89,7 +100,9 @@ export function LectureSettingsPage() {
     }
   }, [selectedGroup]);
 
-  useEffect(() => { fetchConfigs(); }, [fetchConfigs]);
+  useEffect(() => {
+    fetchConfigs();
+  }, [fetchConfigs]);
 
   // ── Save Jira ──
   const handleSaveJira = async () => {
@@ -97,7 +110,7 @@ export function LectureSettingsPage() {
     setJiraSaving(true);
     try {
       const payload = { ...jiraConfig };
-      if (payload.api_token === '••••••••') delete payload.api_token;
+      if (payload.jira_api_token === '••••••••') delete payload.jira_api_token;
       await configureJiraApi(Number(selectedGroup), payload);
       toast.success('Cấu hình Jira đã lưu!');
       setJiraConnected(true);
@@ -142,12 +155,14 @@ export function LectureSettingsPage() {
         </CardHeader>
         <CardContent>
           <Select value={selectedGroup} onValueChange={setSelectedGroup}>
-            <SelectTrigger className="w-full sm:w-[280px]">
+            <SelectTrigger className="w-full sm:w-70">
               <SelectValue placeholder="Chọn nhóm..." />
             </SelectTrigger>
             <SelectContent>
               {groups.map((g) => (
-                <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>
+                <SelectItem key={g.id} value={String(g.id)}>
+                  {g.name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -163,14 +178,21 @@ export function LectureSettingsPage() {
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                      <path d="M11.53 2H2v9.53l.44.44 8.65-8.65L11.53 2Zm1.94 0L2 13.47V22h8.53l.44-.44L2.44 13.03l.53-.53L22 3.47V2h-8.53Z" fill="#2684FF"/>
+                      <path
+                        d="M11.53 2H2v9.53l.44.44 8.65-8.65L11.53 2Zm1.94 0L2 13.47V22h8.53l.44-.44L2.44 13.03l.53-.53L22 3.47V2h-8.53Z"
+                        fill="#2684FF"
+                      />
                     </svg>
                     Jira Configuration
                   </CardTitle>
                   <CardDescription>Kết nối Jira Cloud để đồng bộ issues</CardDescription>
                 </div>
                 <Badge variant={jiraConnected ? 'default' : 'secondary'} className="gap-1">
-                  {jiraConnected ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                  {jiraConnected ? (
+                    <CheckCircle2 className="h-3 w-3" />
+                  ) : (
+                    <AlertTriangle className="h-3 w-3" />
+                  )}
                   {jiraConnected ? 'Connected' : 'Not configured'}
                 </Badge>
               </div>
@@ -200,8 +222,8 @@ export function LectureSettingsPage() {
                   id="jira-email"
                   type="email"
                   placeholder="your@email.com"
-                  value={jiraConfig.email}
-                  onChange={(e) => setJiraConfig((p) => ({ ...p, email: e.target.value }))}
+                  value={jiraConfig.jira_email}
+                  onChange={(e) => setJiraConfig((p) => ({ ...p, jira_email: e.target.value }))}
                 />
               </div>
               <div className="grid gap-2">
@@ -210,13 +232,17 @@ export function LectureSettingsPage() {
                   id="jira-token"
                   type="password"
                   placeholder="Jira API Token"
-                  value={jiraConfig.api_token}
-                  onChange={(e) => setJiraConfig((p) => ({ ...p, api_token: e.target.value }))}
+                  value={jiraConfig.jira_api_token}
+                  onChange={(e) => setJiraConfig((p) => ({ ...p, jira_api_token: e.target.value }))}
                 />
               </div>
               <Separator />
               <Button onClick={handleSaveJira} disabled={jiraSaving} className="w-full">
-                {jiraSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                {jiraSaving ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
                 Save Jira Config
               </Button>
             </CardContent>
@@ -229,14 +255,18 @@ export function LectureSettingsPage() {
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
+                      <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
                     </svg>
                     GitHub Configuration
                   </CardTitle>
                   <CardDescription>Kết nối GitHub Repository để đồng bộ commits</CardDescription>
                 </div>
                 <Badge variant={githubConnected ? 'default' : 'secondary'} className="gap-1">
-                  {githubConnected ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                  {githubConnected ? (
+                    <CheckCircle2 className="h-3 w-3" />
+                  ) : (
+                    <AlertTriangle className="h-3 w-3" />
+                  )}
                   {githubConnected ? 'Connected' : 'Not configured'}
                 </Badge>
               </div>
@@ -263,7 +293,11 @@ export function LectureSettingsPage() {
               </div>
               <Separator />
               <Button onClick={handleSaveGitHub} disabled={githubSaving} className="w-full">
-                {githubSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                {githubSaving ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
                 Save GitHub Config
               </Button>
             </CardContent>

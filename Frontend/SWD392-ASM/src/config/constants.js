@@ -60,6 +60,13 @@ export const API_ENDPOINTS = {
   USERS: {
     BASE: '/users',
     DETAIL: (userId) => `/users/${userId}`,
+    DEACTIVATE: (userId) => `/users/${userId}/deactivate`,
+    ROLES: (userId) => `/users/${userId}/roles`,
+  },
+
+  // Roles
+  ROLES: {
+    BASE: '/roles',
   },
 };
 
@@ -97,6 +104,9 @@ export const QUERY_KEYS = {
     LIST: (filters) => ['users', 'list', filters],
     DETAIL: (userId) => ['users', userId],
   },
+  ROLES: {
+    ALL: ['roles'],
+  },
 };
 
 // ── ROLES ─────────────────────────────────────────────────
@@ -112,10 +122,10 @@ export const JIRA_STATUS_COLORS = {
   'To Do': 'secondary',
   'In Progress': 'default',
   'In Review': 'outline',
-  'Done': 'success',
-  'Closed': 'success',
-  'Resolved': 'success',
-  'Blocked': 'destructive',
+  Done: 'success',
+  Closed: 'success',
+  Resolved: 'success',
+  Blocked: 'destructive',
 };
 
 // ── PRIORITY COLORS ──────────────────────────────────────
