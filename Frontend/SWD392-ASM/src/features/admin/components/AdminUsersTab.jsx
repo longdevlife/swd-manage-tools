@@ -83,7 +83,7 @@ export function AdminUsersTab() {
 
   const handleCreateUser = async () => {
     if (!createForm.fullName.trim() || !createForm.email.trim() || !createForm.password.trim()) {
-      toast.error('Vui lòng điền đầy đủ họ tên, email và mật khẩu');
+      toast.error('Please fill in full name, email, and password');
       return;
     }
 
@@ -120,7 +120,7 @@ export function AdminUsersTab() {
 
   const handleDeactivate = async () => {
     if (!selectedUser) return;
-    if (!window.confirm(`Vô hiệu hoá tài khoản của "${selectedUser.username}"?`)) return;
+    if (!window.confirm(`Deactivate account for "${selectedUser.username}"?`)) return;
 
     try {
       await deactivateUserMutation.mutateAsync(selectedUser.userId);
@@ -136,13 +136,13 @@ export function AdminUsersTab() {
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          <Label className="text-sm font-medium">Lọc theo Role:</Label>
+          <Label className="text-sm font-medium">Filter by Role:</Label>
           <Select value={roleFilter} onValueChange={setRoleFilter}>
             <SelectTrigger className="w-48">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">Tất cả</SelectItem>
+              <SelectItem value="ALL">All</SelectItem>
               {roleOptions.map((role) => (
                 <SelectItem key={role} value={role}>
                   {ROLE_LABEL[role] ?? role}
@@ -160,11 +160,11 @@ export function AdminUsersTab() {
             disabled={usersQuery.isFetching}
           >
             <RefreshCw size={14} className={usersQuery.isFetching ? 'animate-spin' : ''} />
-            <span className="ml-1">Làm mới</span>
+            <span className="ml-1">Refresh</span>
           </Button>
           <Button size="sm" onClick={() => setCreateOpen(true)}>
             <UserPlus size={14} />
-            <span className="ml-1">Tạo người dùng</span>
+            <span className="ml-1">Create User</span>
           </Button>
         </div>
       </div>
@@ -176,11 +176,11 @@ export function AdminUsersTab() {
               <TableRow>
                 <TableHead className="w-16">ID</TableHead>
                 <TableHead>Email</TableHead>
-                <TableHead>Tên người dùng</TableHead>
+                <TableHead>Full Name</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>GitHub</TableHead>
-                <TableHead>Trạng thái</TableHead>
-                <TableHead className="w-32 text-right">Thao tác</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-32 text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -191,8 +191,8 @@ export function AdminUsersTab() {
                   <TableCell colSpan={7}>
                     <EmptyState
                       icon={<ShieldCheck className="h-8 w-8" />}
-                      title="Chưa có người dùng"
-                      description="Không tìm thấy người dùng phù hợp với bộ lọc hiện tại."
+                      title="No users found"
+                      description="No users match the current filter."
                     />
                   </TableCell>
                 </TableRow>
@@ -212,7 +212,7 @@ export function AdminUsersTab() {
                       <span
                         className={user.isActive ? 'text-emerald-600' : 'text-muted-foreground'}
                       >
-                        {user.isActive ? 'Đang hoạt động' : 'Đã vô hiệu hóa'}
+                        {user.isActive ? 'Active' : 'Deactivated'}
                       </span>
                     </TableCell>
                     <TableCell>
@@ -220,7 +220,7 @@ export function AdminUsersTab() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          title="Quản lý người dùng"
+                          title="Manage user"
                           onClick={() => handleOpenManage(user)}
                         >
                           <Eye size={14} />
@@ -235,16 +235,16 @@ export function AdminUsersTab() {
         </CardContent>
       </Card>
 
-      <p className="text-xs text-muted-foreground">{users.length} người dùng</p>
+      <p className="text-xs text-muted-foreground">{users.length} users</p>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Tạo người dùng mới</DialogTitle>
+            <DialogTitle>Create New User</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
-              <Label>Họ và tên</Label>
+              <Label>Full Name</Label>
               <Input
                 className="mt-1"
                 value={createForm.fullName}
@@ -267,7 +267,7 @@ export function AdminUsersTab() {
               />
             </div>
             <div>
-              <Label>Mật khẩu</Label>
+              <Label>Password</Label>
               <Input
                 className="mt-1"
                 type="password"
@@ -275,7 +275,7 @@ export function AdminUsersTab() {
                 onChange={(event) =>
                   setCreateForm((prev) => ({ ...prev, password: event.target.value }))
                 }
-                placeholder="Nhập mật khẩu"
+                placeholder="Enter password"
               />
             </div>
             <div>
@@ -299,10 +299,10 @@ export function AdminUsersTab() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              Huỷ
+              Cancel
             </Button>
             <Button onClick={handleCreateUser} disabled={createUserMutation.isPending}>
-              {createUserMutation.isPending ? 'Đang tạo...' : 'Tạo người dùng'}
+              {createUserMutation.isPending ? 'Creating...' : 'Create User'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -319,7 +319,7 @@ export function AdminUsersTab() {
       >
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Quản lý người dùng</DialogTitle>
+            <DialogTitle>Manage User</DialogTitle>
           </DialogHeader>
 
           {userDetailQuery.isLoading ? (
@@ -332,7 +332,7 @@ export function AdminUsersTab() {
             <div className="space-y-4 py-2">
               <div className="grid gap-3 rounded-lg border bg-muted/20 p-4 sm:grid-cols-2">
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Tên</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Name</p>
                   <p className="text-sm font-medium">{selectedUser.username}</p>
                 </div>
                 <div>
@@ -344,17 +344,15 @@ export function AdminUsersTab() {
                   <p className="text-sm font-medium">{selectedUser.githubUsername || '—'}</p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Trạng thái
-                  </p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Status</p>
                   <p className="text-sm font-medium">
-                    {selectedUser.isActive ? 'Đang hoạt động' : 'Đã vô hiệu hóa'}
+                    {selectedUser.isActive ? 'Active' : 'Deactivated'}
                   </p>
                 </div>
               </div>
 
               <div>
-                <Label>Role hiện tại</Label>
+                <Label>Current Role</Label>
                 <Select value={selectedRole} onValueChange={setSelectedRole}>
                   <SelectTrigger className="mt-1">
                     <SelectValue />
@@ -370,7 +368,7 @@ export function AdminUsersTab() {
               </div>
 
               <div>
-                <p className="mb-2 text-sm font-medium">Nhóm hiện tại</p>
+                <p className="mb-2 text-sm font-medium">Current Groups</p>
                 <div className="flex flex-wrap gap-2">
                   {selectedUser.groups.length > 0 ? (
                     selectedUser.groups.map((group) => (
@@ -382,15 +380,15 @@ export function AdminUsersTab() {
                       </span>
                     ))
                   ) : (
-                    <span className="text-sm text-muted-foreground">Chưa tham gia nhóm nào</span>
+                    <span className="text-sm text-muted-foreground">Not in any group</span>
                   )}
                 </div>
               </div>
             </div>
           ) : (
             <EmptyState
-              title="Không tải được chi tiết người dùng"
-              description="Thử làm mới danh sách và mở lại người dùng này."
+              title="Failed to load user details"
+              description="Try refreshing the list and opening this user again."
             />
           )}
 
@@ -403,19 +401,19 @@ export function AdminUsersTab() {
                   disabled={deactivateUserMutation.isPending}
                 >
                   <UserMinus className="mr-2 h-4 w-4" />
-                  Vô hiệu hoá
+                  Deactivate
                 </Button>
               )}
             </div>
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setManageOpen(false)}>
-                Đóng
+                Close
               </Button>
               <Button
                 onClick={handleUpdateRole}
                 disabled={updateUserRolesMutation.isPending || !selectedUser}
               >
-                {updateUserRolesMutation.isPending ? 'Đang lưu...' : 'Cập nhật role'}
+                {updateUserRolesMutation.isPending ? 'Saving...' : 'Update Role'}
               </Button>
             </div>
           </DialogFooter>

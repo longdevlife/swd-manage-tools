@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronDown,
   ChevronRight,
@@ -59,6 +59,8 @@ import {
   assignLecturerApi,
   createGroupApi,
   deleteGroupApi,
+  getLeaderApi,
+  getLecturersApi,
   removeLecturerApi,
   removeMemberApi,
   updateGroupApi,
@@ -66,6 +68,7 @@ import {
   useGroups,
   useLeader,
   useLecturers,
+  useMembers,
 } from '@/features/groups';
 import { useUsers } from '@/features/users';
 
@@ -73,9 +76,6 @@ const DEFAULT_GROUP_FORM = {
   groupName: '',
   semester: '',
   projectTitle: '',
-  leaderId: '',
-  lecturerId: '',
-  memberIds: [],
 };
 
 const DEFAULT_JIRA_FORM = {
@@ -110,17 +110,26 @@ export function AdminGroupsTab() {
   const leaderQuery = useLeader(expandedGroupId);
   const lecturersQuery = useLecturers(expandedGroupId);
   const targetLecturersQuery = useLecturers(assignLecturerOpen ? targetGroup?.groupId : null);
+  const targetMembersQuery = useMembers(
+    addMemberOpen || assignLeaderOpen ? targetGroup?.groupId : null,
+  );
 
   const groups = Array.isArray(groupsQuery.data?.data)
     ? groupsQuery.data.data.map(normalizeGroup)
     : [];
   const users = Array.isArray(usersQuery.data?.data) ? usersQuery.data.data.map(normalizeUser) : [];
 
-  const availableMembers = users.filter(
-    (user) => !['ROLE_ADMIN', 'ROLE_LECTURER'].includes(user.role),
-  );
-  const availableLecturers = users.filter((user) => user.role === 'ROLE_LECTURER');
+  const isAdminUser = (user) =>
+    user.role === 'ROLE_ADMIN' || (Array.isArray(user.roles) && user.roles.includes('ROLE_ADMIN'));
+  const isLecturerUser = (user) =>
+    user.role === 'ROLE_LECTURER' ||
+    (Array.isArray(user.roles) && user.roles.includes('ROLE_LECTURER'));
+
+  const availableMembers = users.filter((user) => !isAdminUser(user) && !isLecturerUser(user));
+  const availableLecturers = users.filter((user) => isLecturerUser(user));
   const expandedGroup = groups.find((group) => group.groupId === expandedGroupId) ?? null;
+  const targetGroupLatest =
+    groups.find((group) => group.groupId === targetGroup?.groupId) ?? targetGroup;
   const groupDetail = groupDetailQuery.data?.data
     ? normalizeGroup(groupDetailQuery.data.data)
     : expandedGroup;
@@ -131,6 +140,16 @@ export function AdminGroupsTab() {
   const targetLecturerAssignments = Array.isArray(targetLecturersQuery.data?.data)
     ? targetLecturersQuery.data.data
     : [];
+  const targetMembersFromApi = Array.isArray(targetMembersQuery.data?.data)
+    ? targetMembersQuery.data.data.map((member) => ({
+        userId: member?.user?.user_id ?? member?.user_id,
+        username:
+          member?.user?.full_name ??
+          member?.user?.email ??
+          `User #${member?.user?.user_id ?? member?.user_id ?? ''}`,
+        email: member?.user?.email ?? '',
+      }))
+    : [];
 
   const createGroupMutation = useMutation({
     mutationFn: createGroupApi,
@@ -138,87 +157,137 @@ export function AdminGroupsTab() {
   const updateGroupMutation = useMutation({
     mutationFn: ({ groupId, data }) => updateGroupApi(groupId, data),
     onSuccess: () => {
-      toast.success('Cập nhật nhóm thành công');
+      toast.success('Group updated successfully');
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Cập nhật nhóm thất bại');
+      toast.error(error.response?.data?.message || 'Failed to update group');
     },
   });
   const deleteGroupMutation = useMutation({
     mutationFn: deleteGroupApi,
     onSuccess: () => {
-      toast.success('Xoá nhóm thành công');
+      toast.success('Group deleted successfully');
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Xoá nhóm thất bại');
+      toast.error(error.response?.data?.message || 'Failed to delete group');
     },
   });
   const addMemberMutation = useMutation({
     mutationFn: ({ groupId, userId }) => addMemberApi(groupId, { user_id: userId }),
     onSuccess: () => {
-      toast.success('Thêm thành viên thành công');
+      toast.success('Member added successfully');
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Thêm thành viên thất bại');
+      toast.error(error.response?.data?.message || 'Failed to add member');
     },
   });
   const assignLeaderMutation = useMutation({
     mutationFn: ({ groupId, userId }) => assignLeaderApi(groupId, { user_id: userId }),
     onSuccess: () => {
-      toast.success('Gán leader thành công');
+      toast.success('Leader assigned successfully');
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Gán leader thất bại');
+      toast.error(error.response?.data?.message || 'Failed to assign leader');
     },
   });
   const removeMemberMutation = useMutation({
     mutationFn: ({ groupId, userId }) => removeMemberApi(groupId, userId),
     onSuccess: () => {
-      toast.success('Đã xoá thành viên khỏi nhóm');
+      toast.success('Member removed from group');
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Xoá thành viên thất bại');
+      toast.error(error.response?.data?.message || 'Failed to remove member');
     },
   });
   const assignLecturerMutation = useMutation({
     mutationFn: ({ groupId, lecturerId }) =>
       assignLecturerApi(groupId, { lecturer_id: lecturerId }),
     onSuccess: () => {
-      toast.success('Đã gán giảng viên cho nhóm');
+      toast.success('Lecturer assigned to group');
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Gán giảng viên thất bại');
+      toast.error(error.response?.data?.message || 'Failed to assign lecturer');
     },
   });
   const removeLecturerMutation = useMutation({
     mutationFn: ({ groupId, lecturerId }) => removeLecturerApi(groupId, lecturerId),
     onSuccess: () => {
-      toast.success('Đã xoá giảng viên khỏi nhóm');
+      toast.success('Lecturer removed from group');
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Xoá giảng viên thất bại');
+      toast.error(error.response?.data?.message || 'Failed to remove lecturer');
     },
   });
   const createJiraMutation = useMutation({
     mutationFn: ({ groupId, data }) => configureJiraApi(groupId, data),
     onSuccess: () => {
-      toast.success('Tạo dự án Jira thành công');
+      toast.success('Jira project created successfully');
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Tạo dự án Jira thất bại');
+      toast.error(error.response?.data?.message || 'Failed to create Jira project');
     },
   });
 
   const selectableMembers = targetGroup
     ? availableMembers.filter(
-        (user) => !(targetGroup.members ?? []).some((member) => member.userId === user.userId),
+        (user) =>
+          !targetMembersFromApi.some((member) => Number(member.userId) === Number(user.userId)),
       )
     : availableMembers;
-  const selectedMembersForLeader = targetGroup?.members ?? [];
+  const selectedMembersForLeader =
+    targetMembersFromApi.length > 0 ? targetMembersFromApi : (targetGroupLatest?.members ?? []);
   const selectableLecturers = availableLecturers.filter(
     (lecturer) =>
       !targetLecturerAssignments.some((assignment) => assignment.lecturer_id === lecturer.userId),
   );
+
+  const lecturerListQueries = useQueries({
+    queries: groups.map((group) => ({
+      queryKey: QUERY_KEYS.GROUPS.LECTURERS(group.groupId),
+      queryFn: () => getLecturersApi(group.groupId),
+      enabled: !!group.groupId,
+      staleTime: 60 * 1000,
+    })),
+  });
+
+  const leaderListQueries = useQueries({
+    queries: groups.map((group) => ({
+      queryKey: QUERY_KEYS.GROUPS.LEADER(group.groupId),
+      queryFn: () => getLeaderApi(group.groupId),
+      enabled: !!group.groupId,
+      staleTime: 60 * 1000,
+    })),
+  });
+
+  const lecturerDisplayByGroupId = groups.reduce((acc, group, index) => {
+    const result = lecturerListQueries[index]?.data;
+    const assignments = Array.isArray(result?.data)
+      ? result.data
+      : Array.isArray(result)
+        ? result
+        : [];
+    const first = assignments[0];
+
+    acc[group.groupId] =
+      group.lecturer?.username || first?.user?.full_name || first?.user?.email || null;
+
+    return acc;
+  }, {});
+
+  const leaderDisplayByGroupId = groups.reduce((acc, group, index) => {
+    const result = leaderListQueries[index]?.data;
+    const leader = result?.data || result || null;
+
+    acc[group.groupId] =
+      group.teamLeader?.username ||
+      leader?.user?.full_name ||
+      leader?.full_name ||
+      leader?.user?.email ||
+      leader?.email ||
+      null;
+
+    return acc;
+  }, {});
 
   const openCreateDialog = () => {
     setEditingGroup(null);
@@ -232,9 +301,6 @@ export function AdminGroupsTab() {
       groupName: group.groupName,
       semester: group.semester,
       projectTitle: group.projectTitle,
-      leaderId: group.teamLeader?.userId ? String(group.teamLeader.userId) : '',
-      lecturerId: group.lecturer?.userId ? String(group.lecturer.userId) : '',
-      memberIds: group.members.map((member) => String(member.userId)),
     });
     setEditOpen(true);
   };
@@ -243,25 +309,10 @@ export function AdminGroupsTab() {
     setExpandedGroupId((current) => (current === groupId ? null : groupId));
   };
 
-  const handleToggleMemberSelect = (userId) => {
-    const normalizedUserId = String(userId);
-    setGroupForm((prev) => ({
-      ...prev,
-      memberIds: prev.memberIds.includes(normalizedUserId)
-        ? prev.memberIds.filter((id) => id !== normalizedUserId)
-        : [...prev.memberIds, normalizedUserId],
-    }));
-  };
-
   const handleCreateGroup = async () => {
     if (!groupForm.groupName.trim()) {
-      toast.error('Tên nhóm không được để trống');
+      toast.error('Group name is required');
       return;
-    }
-
-    const selectedMemberIds = new Set(groupForm.memberIds.map((id) => Number(id)));
-    if (groupForm.leaderId) {
-      selectedMemberIds.add(Number(groupForm.leaderId));
     }
 
     try {
@@ -273,38 +324,22 @@ export function AdminGroupsTab() {
 
       const groupId = created?.data?.group_id;
       if (!groupId) {
-        throw new Error('Không lấy được ID nhóm sau khi tạo');
-      }
-
-      for (const userId of selectedMemberIds) {
-        await addMemberApi(groupId, { user_id: userId });
-      }
-
-      if (groupForm.leaderId) {
-        await assignLeaderApi(groupId, {
-          user_id: Number(groupForm.leaderId),
-        });
-      }
-
-      if (groupForm.lecturerId) {
-        await assignLecturerApi(groupId, {
-          lecturer_id: Number(groupForm.lecturerId),
-        });
+        throw new Error('Could not retrieve the group ID after creation');
       }
 
       await refreshGroupQueries(groupId, queryClient);
       setCreateOpen(false);
       setGroupForm(DEFAULT_GROUP_FORM);
-      toast.success('Đã tạo nhóm và đồng bộ thành viên thành công');
+      toast.success('Group created successfully');
     } catch (error) {
-      toast.error(error.response?.data?.message || error.message || 'Tạo nhóm thất bại');
+      toast.error(error.response?.data?.message || error.message || 'Failed to create group');
     }
   };
 
   const handleUpdateGroup = async () => {
     if (!editingGroup) return;
     if (!groupForm.groupName.trim()) {
-      toast.error('Tên nhóm không được để trống');
+      toast.error('Group name is required');
       return;
     }
 
@@ -326,7 +361,7 @@ export function AdminGroupsTab() {
   };
 
   const handleDeleteGroup = async (group) => {
-    if (!window.confirm(`Xoá nhóm "${group.groupName}"? Hành động này không thể hoàn tác.`)) {
+    if (!window.confirm(`Delete group "${group.groupName}"? This action cannot be undone.`)) {
       return;
     }
 
@@ -343,7 +378,7 @@ export function AdminGroupsTab() {
 
   const handleAddMember = async () => {
     if (!targetGroup?.groupId || !addMemberUserId) {
-      toast.error('Vui lòng chọn người dùng');
+      toast.error('Please select a user');
       return;
     }
 
@@ -362,7 +397,7 @@ export function AdminGroupsTab() {
 
   const handleAssignLeader = async () => {
     if (!targetGroup?.groupId || !assignLeaderUserId) {
-      toast.error('Vui lòng chọn thành viên');
+      toast.error('Please select a member');
       return;
     }
 
@@ -381,7 +416,7 @@ export function AdminGroupsTab() {
 
   const handleAssignLecturer = async () => {
     if (!targetGroup?.groupId || !assignLecturerUserId) {
-      toast.error('Vui lòng chọn giảng viên');
+      toast.error('Please select a lecturer');
       return;
     }
 
@@ -399,7 +434,7 @@ export function AdminGroupsTab() {
   };
 
   const handleRemoveMember = async (groupId, userId, username) => {
-    if (!window.confirm(`Xoá "${username}" khỏi nhóm?`)) return;
+    if (!window.confirm(`Remove "${username}" from this group?`)) return;
 
     try {
       await removeMemberMutation.mutateAsync({ groupId, userId });
@@ -410,7 +445,7 @@ export function AdminGroupsTab() {
   };
 
   const handleRemoveLecturer = async (groupId, lecturerId, lecturerName) => {
-    if (!window.confirm(`Xoá giảng viên "${lecturerName}" khỏi nhóm?`)) return;
+    if (!window.confirm(`Remove lecturer "${lecturerName}" from this group?`)) return;
 
     try {
       await removeLecturerMutation.mutateAsync({ groupId, lecturerId });
@@ -429,7 +464,7 @@ export function AdminGroupsTab() {
       !jiraForm.jiraEmail.trim() ||
       !jiraForm.jiraApiToken.trim()
     ) {
-      toast.error('Vui lòng nhập đầy đủ thông tin Jira');
+      toast.error('Please complete all Jira fields');
       return;
     }
 
@@ -455,7 +490,7 @@ export function AdminGroupsTab() {
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-muted-foreground">{groups.length} nhóm</p>
+        <p className="text-sm text-muted-foreground">{groups.length} groups</p>
         <div className="flex gap-2">
           <Button
             variant="outline"
@@ -464,11 +499,11 @@ export function AdminGroupsTab() {
             disabled={groupsQuery.isFetching}
           >
             <RefreshCw size={14} className={groupsQuery.isFetching ? 'animate-spin' : ''} />
-            <span className="ml-1">Làm mới</span>
+            <span className="ml-1">Refresh</span>
           </Button>
           <Button size="sm" onClick={openCreateDialog}>
             <Plus size={14} />
-            <span className="ml-1">Tạo nhóm</span>
+            <span className="ml-1">Create Group</span>
           </Button>
         </div>
       </div>
@@ -479,13 +514,13 @@ export function AdminGroupsTab() {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-8" />
-                <TableHead>Tên nhóm</TableHead>
+                <TableHead>Group Name</TableHead>
                 <TableHead>Semester</TableHead>
-                <TableHead>Giảng viên</TableHead>
-                <TableHead>Trưởng nhóm</TableHead>
-                <TableHead className="w-24 text-center">Thành viên</TableHead>
+                <TableHead>Lecturer</TableHead>
+                <TableHead>Leader</TableHead>
+                <TableHead className="w-24 text-center">Members</TableHead>
                 <TableHead>Project Key</TableHead>
-                <TableHead className="w-56 text-right">Thao tác</TableHead>
+                <TableHead className="w-56 text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -496,8 +531,8 @@ export function AdminGroupsTab() {
                   <TableCell colSpan={8}>
                     <EmptyState
                       icon={<Users className="h-8 w-8" />}
-                      title="Chưa có nhóm nào"
-                      description="Tạo nhóm mới để gán thành viên, leader và lecturer."
+                      title="No groups found"
+                      description="Create a group to assign members, leader, and lecturer."
                     />
                   </TableCell>
                 </TableRow>
@@ -519,12 +554,12 @@ export function AdminGroupsTab() {
                       </TableCell>
                       <TableCell className="font-semibold">{group.groupName}</TableCell>
                       <TableCell>{group.semester || '—'}</TableCell>
-                      <TableCell>{group.lecturer?.username || '—'}</TableCell>
+                      <TableCell>{lecturerDisplayByGroupId[group.groupId] || '—'}</TableCell>
                       <TableCell>
-                        {group.teamLeader ? (
+                        {leaderDisplayByGroupId[group.groupId] ? (
                           <span className="flex items-center gap-1 text-sm">
                             <Crown size={12} className="text-yellow-500" />
-                            {group.teamLeader.username}
+                            {leaderDisplayByGroupId[group.groupId]}
                           </span>
                         ) : (
                           '—'
@@ -547,7 +582,7 @@ export function AdminGroupsTab() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            title="Chỉnh sửa nhóm"
+                            title="Edit group"
                             onClick={() => openEditDialog(group)}
                           >
                             <Pencil size={14} />
@@ -555,7 +590,7 @@ export function AdminGroupsTab() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            title="Thêm thành viên"
+                            title="Add member"
                             onClick={() => {
                               setTargetGroup(group);
                               setAddMemberUserId('');
@@ -567,7 +602,7 @@ export function AdminGroupsTab() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            title="Chỉ định trưởng nhóm"
+                            title="Assign leader"
                             onClick={() => {
                               setTargetGroup(group);
                               setAssignLeaderUserId(
@@ -581,7 +616,7 @@ export function AdminGroupsTab() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            title="Gán giảng viên"
+                            title="Assign lecturer"
                             onClick={() => {
                               setTargetGroup(group);
                               setAssignLecturerUserId('');
@@ -594,7 +629,7 @@ export function AdminGroupsTab() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              title="Tạo dự án Jira"
+                              title="Create Jira project"
                               onClick={() => {
                                 setTargetGroup(group);
                                 setJiraForm({
@@ -613,7 +648,7 @@ export function AdminGroupsTab() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            title="Xoá nhóm"
+                            title="Delete group"
                             className="text-destructive hover:text-destructive"
                             onClick={() => handleDeleteGroup(group)}
                           >
@@ -664,11 +699,11 @@ export function AdminGroupsTab() {
                                 </div>
                                 <div className="rounded-md border bg-background p-3">
                                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                                    Ngày tạo
+                                    Created At
                                   </p>
                                   <p className="mt-1 text-sm font-medium">
                                     {groupDetail?.createdAt
-                                      ? new Date(groupDetail.createdAt).toLocaleDateString('vi-VN')
+                                      ? new Date(groupDetail.createdAt).toLocaleDateString('en-GB')
                                       : '—'}
                                   </p>
                                 </div>
@@ -678,7 +713,7 @@ export function AdminGroupsTab() {
 
                               <div className="space-y-2">
                                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                  Trưởng nhóm
+                                  Leader
                                 </p>
                                 {leaderDetail ? (
                                   <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm">
@@ -694,7 +729,7 @@ export function AdminGroupsTab() {
                                   </div>
                                 ) : (
                                   <span className="text-sm text-muted-foreground">
-                                    Chưa có trưởng nhóm
+                                    No leader assigned
                                   </span>
                                 )}
                               </div>
@@ -703,7 +738,7 @@ export function AdminGroupsTab() {
 
                               <div className="space-y-2">
                                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                  Giảng viên phụ trách
+                                  Assigned Lecturers
                                 </p>
                                 {lecturerAssignments.length > 0 ? (
                                   <div className="flex flex-wrap gap-2">
@@ -717,7 +752,7 @@ export function AdminGroupsTab() {
                                         </span>
                                         <button
                                           className="text-muted-foreground hover:text-destructive"
-                                          title="Xoá giảng viên"
+                                          title="Remove lecturer"
                                           onClick={() =>
                                             handleRemoveLecturer(
                                               group.groupId,
@@ -733,7 +768,7 @@ export function AdminGroupsTab() {
                                   </div>
                                 ) : (
                                   <span className="text-sm text-muted-foreground">
-                                    Chưa có giảng viên nào
+                                    No lecturers assigned
                                   </span>
                                 )}
                               </div>
@@ -742,7 +777,7 @@ export function AdminGroupsTab() {
 
                               <div className="space-y-2">
                                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                  Thành viên nhóm
+                                  Group Members
                                 </p>
                                 {group.members.length > 0 ? (
                                   <div className="flex flex-wrap gap-2">
@@ -755,7 +790,7 @@ export function AdminGroupsTab() {
                                         <AdminRoleBadge role={member.role} />
                                         <button
                                           className="text-muted-foreground hover:text-destructive"
-                                          title="Xoá thành viên"
+                                          title="Remove member"
                                           onClick={() =>
                                             handleRemoveMember(
                                               group.groupId,
@@ -770,9 +805,7 @@ export function AdminGroupsTab() {
                                     ))}
                                   </div>
                                 ) : (
-                                  <span className="text-sm text-muted-foreground">
-                                    Chưa có thành viên
-                                  </span>
+                                  <span className="text-sm text-muted-foreground">No members</span>
                                 )}
                               </div>
                             </div>
@@ -790,49 +823,35 @@ export function AdminGroupsTab() {
 
       <AdminGroupFormDialog
         open={createOpen}
-        title="Tạo nhóm mới"
+        title="Create New Group"
         form={groupForm}
-        availableMembers={availableMembers}
-        availableLecturers={availableLecturers}
         onOpenChange={setCreateOpen}
         onFormChange={setGroupForm}
-        onToggleMemberSelect={handleToggleMemberSelect}
         onSubmit={handleCreateGroup}
-        submitting={
-          createGroupMutation.isPending ||
-          addMemberMutation.isPending ||
-          assignLeaderMutation.isPending ||
-          assignLecturerMutation.isPending
-        }
+        submitting={createGroupMutation.isPending}
       />
 
       <AdminGroupFormDialog
         open={editOpen}
-        title="Chỉnh sửa nhóm"
+        title="Edit Group"
         form={groupForm}
-        availableMembers={availableMembers}
-        availableLecturers={availableLecturers}
         onOpenChange={setEditOpen}
         onFormChange={setGroupForm}
-        onToggleMemberSelect={handleToggleMemberSelect}
         onSubmit={handleUpdateGroup}
         submitting={updateGroupMutation.isPending}
-        disableMemberSelection
       />
 
       <Dialog open={addMemberOpen} onOpenChange={setAddMemberOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>
-              Thêm thành viên {targetGroup ? `- ${targetGroup.groupName}` : ''}
-            </DialogTitle>
+            <DialogTitle>Add Member {targetGroup ? `- ${targetGroup.groupName}` : ''}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div>
-              <Label>Chọn người dùng</Label>
+              <Label>Select user</Label>
               <Select value={addMemberUserId} onValueChange={setAddMemberUserId}>
                 <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Chọn thành viên..." />
+                  <SelectValue placeholder="Select member..." />
                 </SelectTrigger>
                 <SelectContent>
                   {selectableMembers.map((user) => (
@@ -846,10 +865,10 @@ export function AdminGroupsTab() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddMemberOpen(false)}>
-              Huỷ
+              Cancel
             </Button>
             <Button onClick={handleAddMember} disabled={addMemberMutation.isPending}>
-              {addMemberMutation.isPending ? 'Đang thêm...' : 'Thêm thành viên'}
+              {addMemberMutation.isPending ? 'Adding...' : 'Add Member'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -859,20 +878,21 @@ export function AdminGroupsTab() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>
-              Chỉ định trưởng nhóm {targetGroup ? `- ${targetGroup.groupName}` : ''}
+              Assign Leader {targetGroup ? `- ${targetGroup.groupName}` : ''}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div>
-              <Label>Chọn thành viên</Label>
+              <Label>Select member</Label>
               <Select value={assignLeaderUserId} onValueChange={setAssignLeaderUserId}>
                 <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Chọn leader..." />
+                  <SelectValue placeholder="Select leader..." />
                 </SelectTrigger>
                 <SelectContent>
                   {selectedMembersForLeader.map((member) => (
                     <SelectItem key={member.userId} value={String(member.userId)}>
                       {member.username}
+                      {member.email ? ` - ${member.email}` : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -881,13 +901,17 @@ export function AdminGroupsTab() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAssignLeaderOpen(false)}>
-              Huỷ
+              Cancel
             </Button>
             <Button
               onClick={handleAssignLeader}
-              disabled={assignLeaderMutation.isPending || selectedMembersForLeader.length === 0}
+              disabled={
+                assignLeaderMutation.isPending ||
+                targetMembersQuery.isFetching ||
+                selectedMembersForLeader.length === 0
+              }
             >
-              {assignLeaderMutation.isPending ? 'Đang lưu...' : 'Lưu leader'}
+              {assignLeaderMutation.isPending ? 'Saving...' : 'Save Leader'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -897,15 +921,15 @@ export function AdminGroupsTab() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>
-              Gán giảng viên {targetGroup ? `- ${targetGroup.groupName}` : ''}
+              Assign Lecturer {targetGroup ? `- ${targetGroup.groupName}` : ''}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div>
-              <Label>Chọn giảng viên</Label>
+              <Label>Select lecturer</Label>
               <Select value={assignLecturerUserId} onValueChange={setAssignLecturerUserId}>
                 <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Chọn giảng viên..." />
+                  <SelectValue placeholder="Select lecturer..." />
                 </SelectTrigger>
                 <SelectContent>
                   {selectableLecturers.map((lecturer) => (
@@ -919,10 +943,10 @@ export function AdminGroupsTab() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAssignLecturerOpen(false)}>
-              Huỷ
+              Cancel
             </Button>
             <Button onClick={handleAssignLecturer} disabled={assignLecturerMutation.isPending}>
-              {assignLecturerMutation.isPending ? 'Đang lưu...' : 'Gán giảng viên'}
+              {assignLecturerMutation.isPending ? 'Saving...' : 'Assign Lecturer'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -932,7 +956,7 @@ export function AdminGroupsTab() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>
-              Tạo dự án Jira {targetGroup ? `- ${targetGroup.groupName}` : ''}
+              Create Jira Project {targetGroup ? `- ${targetGroup.groupName}` : ''}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -959,7 +983,7 @@ export function AdminGroupsTab() {
                 onChange={(event) =>
                   setJiraForm((prev) => ({ ...prev, projectName: event.target.value }))
                 }
-                placeholder="Tên dự án Jira"
+                placeholder="Jira project name"
               />
             </div>
             <div>
@@ -1000,10 +1024,10 @@ export function AdminGroupsTab() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setJiraOpen(false)}>
-              Huỷ
+              Cancel
             </Button>
             <Button onClick={handleCreateJiraProject} disabled={createJiraMutation.isPending}>
-              {createJiraMutation.isPending ? 'Đang tạo...' : 'Tạo dự án'}
+              {createJiraMutation.isPending ? 'Creating...' : 'Create Project'}
             </Button>
           </DialogFooter>
         </DialogContent>

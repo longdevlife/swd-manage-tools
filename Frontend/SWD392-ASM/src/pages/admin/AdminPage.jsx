@@ -6,8 +6,8 @@ import { Separator } from '@/components/ui/separator';
 import { AdminGroupsTab, AdminUsersTab } from '@/features/admin';
 
 const tabs = [
-  { id: 'users', label: 'Người dùng', icon: Users },
-  { id: 'groups', label: 'Nhóm', icon: Layers },
+  { id: 'users', label: 'Users', icon: Users },
+  { id: 'groups', label: 'Groups', icon: Layers },
 ];
 
 export function AdminPage() {
@@ -17,7 +17,7 @@ export function AdminPage() {
     <div className="space-y-6">
       <PageHeader
         title="Admin Panel"
-        description="Quản lý người dùng, nhóm, role và cấu hình tích hợp ở mức hệ thống."
+        description="Manage users, groups, roles, and integration settings at the system level."
         actions={
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Shield size={20} />
