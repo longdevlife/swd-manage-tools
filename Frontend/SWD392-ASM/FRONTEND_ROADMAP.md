@@ -11,7 +11,7 @@
 | BE API Endpoints | 36 |
 | FE API Functions | 36 (100%) |
 | FE Pages gọi real APIs | 13/15 (87%) |
-| Tổng endpoints có UI | 34/36 (94%) |
+| Tổng endpoints có UI | **36/36 (100%)** ✅ |
 
 ---
 
@@ -176,14 +176,3 @@ Mở `http://localhost:5173/login` → click **"Sign up"**
 | `features/sync/api/syncApi.js` | manualSync | DashboardPage |
 | `features/users/api/usersApi.js` | getUsers, updateUserProfile | AdminPage, ProfilePage |
 
----
-
-## Bugs đã fix (15/03/2026)
-
-| # | File | Bug | Fix |
-|---|------|-----|-----|
-| 1 | `axiosClient.js` | baseURL `localhost:8080` bypass Vite proxy | → `/api` (qua proxy port 5000) |
-| 2 | `authSlice.js` | `selectUserRole` chỉ đọc `role` string | → Support cả `role` + `roles[]` |
-| 3 | `ProtectedRoute.jsx` | So sánh `role !== 'ROLE_ADMIN'` sai format | → Normalize ROLE_ prefix |
-| 4 | `Sidebar.jsx` | Hardcode `'ROLE_ADMIN'`, thiếu RBAC sections | → Normalize + thêm Leader/Lecturer sections |
-| 5 | `LoginPage.jsx` | Không normalize user object sau login/register | → `{ role: roles[0], roles }` |

@@ -8,12 +8,15 @@ import {
     Calendar,
     CheckCircle2,
     BarChart3,
+    RefreshCw,
+    GitBranch,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { selectCurrentUser } from '@/stores/authSlice';
 import { PageHeader } from '@/components/PageHeader';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
     Table,
@@ -27,6 +30,8 @@ import { Separator } from '@/components/ui/separator';
 
 import { getReportsApi, generateReportApi } from '@/features/reports/api/reportsApi';
 import { getJiraIssuesApi } from '@/features/jira/api/jiraApi';
+import { getCommitsApi } from '@/features/github/api/githubApi';
+import { manualSyncApi } from '@/features/sync/api/syncApi';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -77,6 +82,9 @@ export function LeaderReportsPage() {
     const [summary, setSummary] = useState({ total_group_commits: 0, total_group_lines: 0, total_group_issues_resolved: 0 });
     const [jiraStats, setJiraStats] = useState({ total: 0, done: 0 });
     const [loading, setLoading] = useState(false);
+    const [commits, setCommits] = useState([]);
+    const [commitsLoading, setCommitsLoading] = useState(false);
+    const [syncing, setSyncing] = useState(false);
 
     // Fetch contribution reports + jira stats
     const fetchData = useCallback(async () => {
@@ -107,6 +115,36 @@ export function LeaderReportsPage() {
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
+    // Fetch commits
+    const fetchCommits = useCallback(async () => {
+        if (!groupId) return;
+        setCommitsLoading(true);
+        try {
+            const res = await getCommitsApi(groupId);
+            const list = res?.data?.data || res?.data || (Array.isArray(res) ? res : []);
+            setCommits(Array.isArray(list) ? list.slice(0, 50) : []);
+        } catch { /* empty */ }
+        setCommitsLoading(false);
+    }, [groupId]);
+
+    useEffect(() => { fetchCommits(); }, [fetchCommits]);
+
+    // Manual Sync (Jira + GitHub)
+    const handleSync = async () => {
+        if (!groupId) return;
+        setSyncing(true);
+        try {
+            await manualSyncApi(groupId);
+            toast.success('Đồng bộ thành công!');
+            fetchData();
+            fetchCommits();
+        } catch {
+            toast.error('Đồng bộ thất bại');
+        } finally {
+            setSyncing(false);
+        }
+    };
+
     // Generate report action
     const handleGenerateReport = async () => {
         if (!groupId) return;
@@ -114,7 +152,7 @@ export function LeaderReportsPage() {
             toast.info('Đang tạo báo cáo...');
             await generateReportApi(groupId);
             toast.success('Báo cáo đã được tạo thành công!');
-            fetchData(); // refresh data
+            fetchData();
         } catch {
             toast.error('Không thể tạo báo cáo');
         }
@@ -169,10 +207,16 @@ export function LeaderReportsPage() {
                 title="Reports & Analytics"
                 description="Thống kê commit, tiến độ và báo cáo hiệu suất nhóm."
                 actions={
-                    <Button onClick={handleGenerateReport} disabled={loading || !groupId}>
-                        <Download className="mr-2 h-4 w-4" />
-                        Generate Report
-                    </Button>
+                    <div className="flex gap-2">
+                        <Button variant="outline" onClick={handleSync} disabled={syncing}>
+                            <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+                            Sync
+                        </Button>
+                        <Button onClick={handleGenerateReport} disabled={loading || !groupId}>
+                            <Download className="mr-2 h-4 w-4" />
+                            Generate Report
+                        </Button>
+                    </div>
                 }
             />
 
@@ -355,6 +399,66 @@ export function LeaderReportsPage() {
                             </p>
                         )}
                     </div>
+                </CardContent>
+            </Card>
+
+            {/* GitHub Commits Table */}
+            <Card>
+                <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <CardTitle className="text-base flex items-center gap-2">
+                                <GitBranch className="h-4 w-4" />
+                                Recent GitHub Commits
+                            </CardTitle>
+                            <CardDescription className="mt-1">Lịch sử commit của team từ GitHub</CardDescription>
+                        </div>
+                        <Button variant="outline" size="sm" onClick={fetchCommits} disabled={commitsLoading}>
+                            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${commitsLoading ? 'animate-spin' : ''}`} />
+                            Refresh
+                        </Button>
+                    </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Author</TableHead>
+                                <TableHead>Message</TableHead>
+                                <TableHead className="w-24">SHA</TableHead>
+                                <TableHead className="w-32">Date</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {commits.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
+                                        {commitsLoading ? 'Đang tải...' : 'Chưa có commits. Hãy cấu hình GitHub và Sync.'}
+                                    </TableCell>
+                                </TableRow>
+                            ) : commits.map((c, idx) => (
+                                <TableRow key={c.commit_id || idx} className="hover:bg-muted/30">
+                                    <TableCell>
+                                        <div className="flex items-center gap-2">
+                                            <AvatarCircle name={c.author_name || c.author || 'Unknown'} />
+                                            <span className="text-sm font-medium">{c.author_name || c.author || '—'}</span>
+                                        </div>
+                                    </TableCell>
+                                    <TableCell className="max-w-[400px] truncate text-sm">
+                                        {c.message || c.commit_message || '—'}
+                                    </TableCell>
+                                    <TableCell>
+                                        <Badge variant="outline" className="font-mono text-[10px]">
+                                            {(c.sha || c.commit_hash || '').substring(0, 7)}
+                                        </Badge>
+                                    </TableCell>
+                                    <TableCell className="text-xs text-muted-foreground">
+                                        {formatDate(c.committed_at || c.commit_date || c.created_at)}
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
                 </CardContent>
             </Card>
         </div>

@@ -321,16 +321,25 @@ export function LeaderTasksPage() {
         },
     ];
 
-    // Assign handler
-    const handleAssign = (memberId) => {
-        if (!assignTarget) return;
+    // Assign handler — gọi API thực để sync lên Jira
+    const [assigning, setAssigning] = useState(false);
+    const handleAssign = async (memberId) => {
+        if (!assignTarget || !groupId) return;
         const member = members.find((m) => m.id === memberId);
-        setTasks((prev) =>
-            prev.map((t) => (t.id === assignTarget.id ? { ...t, assignee: member } : t)),
-        );
-        toast.success(`Đã giao task ${assignTarget.id} cho ${member.name}`);
-        setAssignDialogOpen(false);
-        setAssignTarget(null);
+        setAssigning(true);
+        try {
+            await assignIssueApi(groupId, assignTarget.id, { assignee_id: memberId });
+            setTasks((prev) =>
+                prev.map((t) => (t.id === assignTarget.id ? { ...t, assignee: member } : t)),
+            );
+            toast.success(`Đã giao task ${assignTarget.id} cho ${member.name}`);
+            setAssignDialogOpen(false);
+            setAssignTarget(null);
+        } catch (err) {
+            toast.error(err?.response?.data?.message ?? 'Giao task thất bại');
+        } finally {
+            setAssigning(false);
+        }
     };
 
     // Create task handler

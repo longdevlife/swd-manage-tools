@@ -73,6 +73,7 @@ const leaderNavSections = [
     items: [
       { to: '/leader/tasks', icon: ClipboardList, label: 'Task Management' },
       { to: '/leader/reports', icon: BarChart3, label: 'Reports' },
+      { to: '/lecture/settings', icon: Settings, label: 'Config Jira/GitHub' },
     ],
   },
 ];
@@ -188,6 +189,7 @@ export function Sidebar({ collapsed, onToggleCollapse }) {
       items: [
         { to: '/leader/tasks', icon: ClipboardList, label: 'Task Management' },
         { to: '/leader/reports', icon: BarChart3, label: 'Reports' },
+        { to: '/lecture/settings', icon: Settings, label: 'Config Jira/GitHub' },
       ],
     });
   }

@@ -53,11 +53,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import {
   getGroupsApi,
+  getGroupByIdApi,
   createGroupApi,
   updateGroupApi,
   deleteGroupApi,
   addMemberApi,
   removeMemberApi,
+  getLeaderApi,
   assignLeaderApi,
   getLecturersApi,
   assignLecturerApi,
@@ -82,6 +84,10 @@ const removeLecturer = (groupId, lecturerId) =>
   removeLecturerApi(groupId, lecturerId);
 const updateGroup = (groupId, data) =>
   updateGroupApi(groupId, data);
+const getGroupDetail = (groupId) =>
+  getGroupByIdApi(groupId);
+const getGroupLeader = (groupId) =>
+  getLeaderApi(groupId);
 const getLecturersForGroup = (groupId) =>
   getLecturersApi(groupId);
 const assignLecturerToGroup = (groupId, lecturerId) =>
@@ -288,6 +294,9 @@ function GroupsTab() {
   const [allUsers, setAllUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [expandedGroup, setExpandedGroup] = useState(null);
+  const [groupDetailData, setGroupDetailData] = useState(null);
+  const [groupLeaderData, setGroupLeaderData] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   // Create Group Dialog
   const [createOpen, setCreateOpen] = useState(false);
@@ -508,9 +517,25 @@ function GroupsTab() {
                     <TableRow key={g.groupId} className="hover:bg-muted/30">
                       <TableCell>
                         <button
-                          onClick={() =>
-                            setExpandedGroup(expandedGroup === g.groupId ? null : g.groupId)
-                          }
+                          onClick={async () => {
+                            const newId = expandedGroup === g.groupId ? null : g.groupId;
+                            setExpandedGroup(newId);
+                            if (newId) {
+                              setDetailLoading(true);
+                              setGroupDetailData(null);
+                              setGroupLeaderData(null);
+                              try {
+                                const [detail, leader] = await Promise.allSettled([
+                                  getGroupDetail(newId),
+                                  getGroupLeader(newId),
+                                ]);
+                                if (detail.status === 'fulfilled') setGroupDetailData(detail.value?.data ?? detail.value);
+                                if (leader.status === 'fulfilled') setGroupLeaderData(leader.value?.data ?? leader.value);
+                              } catch { /* silent */ } finally {
+                                setDetailLoading(false);
+                              }
+                            }
+                          }}
                           className="text-muted-foreground hover:text-foreground"
                         >
                           {expandedGroup === g.groupId ? (
@@ -625,43 +650,118 @@ function GroupsTab() {
                       </TableCell>
                     </TableRow>
 
-                    {/* Expanded Members Row */}
+                    {/* Expanded Group Detail Row */}
                     {expandedGroup === g.groupId && (
-                      <TableRow key={`${g.groupId}-members`} className="bg-muted/20">
+                      <TableRow key={`${g.groupId}-detail`} className="bg-muted/20">
                         <TableCell />
                         <TableCell colSpan={6}>
-                          <p className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                            Thành viên nhóm
-                          </p>
-                          {g.members && g.members.length > 0 ? (
-                            <div className="flex flex-wrap gap-2">
-                              {g.members.map((m) => (
-                                <div
-                                  key={m.userId}
-                                  className="flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-xs"
-                                >
-                                  <span>{m.username ?? m.userId}</span>
-                                  <RoleBadge role={m.role} />
-                                  <button
-                                    className="ml-1 text-muted-foreground hover:text-destructive"
-                                    title="Xoá khỏi nhóm"
-                                    onClick={() =>
-                                      handleRemoveMember(
-                                        g.groupId,
-                                        m.userId,
-                                        m.username ?? m.userId,
-                                      )
-                                    }
-                                  >
-                                    <XCircle size={12} />
-                                  </button>
-                                </div>
-                              ))}
+                          {detailLoading ? (
+                            <div className="space-y-2 py-2">
+                              <Skeleton className="h-4 w-1/3" />
+                              <Skeleton className="h-4 w-1/2" />
+                              <Skeleton className="h-4 w-2/5" />
                             </div>
                           ) : (
-                            <span className="text-xs text-muted-foreground">
-                              Chưa có thành viên
-                            </span>
+                            <div className="space-y-4 py-2">
+                              {/* Group Detail — from getGroupByIdApi */}
+                              <div>
+                                <p className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                                  Chi tiết nhóm (API: getGroupById)
+                                </p>
+                                {groupDetailData ? (
+                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                    <div className="rounded-md border bg-background p-2">
+                                      <p className="text-[10px] text-muted-foreground">Semester</p>
+                                      <p className="text-sm font-medium">{groupDetailData.semester ?? g.semester ?? '—'}</p>
+                                    </div>
+                                    <div className="rounded-md border bg-background p-2">
+                                      <p className="text-[10px] text-muted-foreground">Project Title</p>
+                                      <p className="text-sm font-medium">{groupDetailData.project_title ?? g.projectTitle ?? '—'}</p>
+                                    </div>
+                                    <div className="rounded-md border bg-background p-2">
+                                      <p className="text-[10px] text-muted-foreground">Group ID</p>
+                                      <p className="text-sm font-mono">{groupDetailData.group_id ?? g.groupId}</p>
+                                    </div>
+                                    <div className="rounded-md border bg-background p-2">
+                                      <p className="text-[10px] text-muted-foreground">Ngày tạo</p>
+                                      <p className="text-sm font-medium">
+                                        {groupDetailData.created_at
+                                          ? new Date(groupDetailData.created_at).toLocaleDateString('vi-VN')
+                                          : '—'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">Không thể tải chi tiết nhóm</span>
+                                )}
+                              </div>
+
+                              <Separator />
+
+                              {/* Leader Info — from getLeaderApi */}
+                              <div>
+                                <p className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                                  Trưởng nhóm (API: getLeader)
+                                </p>
+                                {groupLeaderData ? (
+                                  <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2">
+                                    <Crown size={14} className="text-yellow-500" />
+                                    <span className="text-sm font-medium">
+                                      {groupLeaderData.full_name ?? groupLeaderData.user?.full_name ?? groupLeaderData.email ?? '—'}
+                                    </span>
+                                    {(groupLeaderData.email ?? groupLeaderData.user?.email) && (
+                                      <span className="text-xs text-muted-foreground">
+                                        ({groupLeaderData.email ?? groupLeaderData.user?.email})
+                                      </span>
+                                    )}
+                                    <Badge variant="default" className="text-[10px]">Leader</Badge>
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">
+                                    Chưa có trưởng nhóm
+                                  </span>
+                                )}
+                              </div>
+
+                              <Separator />
+
+                              {/* Members List */}
+                              <div>
+                                <p className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                                  Thành viên nhóm
+                                </p>
+                                {g.members && g.members.length > 0 ? (
+                                  <div className="flex flex-wrap gap-2">
+                                    {g.members.map((m) => (
+                                      <div
+                                        key={m.userId}
+                                        className="flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-xs"
+                                      >
+                                        <span>{m.username ?? m.userId}</span>
+                                        <RoleBadge role={m.role} />
+                                        <button
+                                          className="ml-1 text-muted-foreground hover:text-destructive"
+                                          title="Xoá khỏi nhóm"
+                                          onClick={() =>
+                                            handleRemoveMember(
+                                              g.groupId,
+                                              m.userId,
+                                              m.username ?? m.userId,
+                                            )
+                                          }
+                                        >
+                                          <XCircle size={12} />
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">
+                                    Chưa có thành viên
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           )}
                         </TableCell>
                       </TableRow>
