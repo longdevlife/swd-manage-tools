@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useSelector } from 'react-redux';
+import { selectCurrentUser } from '@/stores/authSlice';
 import {
     ListTodo,
     Clock,
@@ -57,146 +59,49 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 
-// ─── Mock Data ────────────────────────────────────────────────────────────────
+import { getJiraIssuesApi, assignIssueApi } from '@/features/jira/api/jiraApi';
+import { getMembersApi } from '@/features/groups/api/groupsApi';
 
-const mockMembers = [
-    { id: 'm1', name: 'Nguyễn Văn A', email: 'a.nguyen@fpt.edu.vn', avatar: 'NVA' },
-    { id: 'm2', name: 'Trần Thị B', email: 'b.tran@fpt.edu.vn', avatar: 'TTB' },
-    { id: 'm3', name: 'Lê Văn C', email: 'c.le@fpt.edu.vn', avatar: 'LVC' },
-    { id: 'm4', name: 'Phạm Thị D', email: 'd.pham@fpt.edu.vn', avatar: 'PTD' },
-];
+// ─── Data Mapping ─────────────────────────────────────────────────────────────
+// Map backend Jira status → UI status key
+const STATUS_MAP = {
+    'To Do': 'todo',
+    'In Progress': 'in_progress',
+    'In Review': 'in_review',
+    'Done': 'done',
+    'Closed': 'done',
+    'Resolved': 'done',
+};
+// Map backend priority → UI priority key
+const PRIORITY_MAP = {
+    Highest: 'urgent',
+    High: 'high',
+    Medium: 'medium',
+    Low: 'low',
+    Lowest: 'low',
+};
 
-const mockTasks = [
-    {
-        id: 'SWD-101',
-        title: 'Implement Google OAuth Login',
-        description:
-            'Tích hợp đăng nhập bằng Google OAuth 2.0 cho hệ thống. Bao gồm redirect flow, xử lý callback, và lưu JWT token.',
-        sprint: 'Sprint 3',
-        priority: 'high',
-        status: 'done',
-        dueDate: '2026-03-10',
-        assignee: mockMembers[0],
-        storyPoints: 5,
-        labels: ['frontend', 'auth'],
-        createdDate: '2026-03-01',
-        comments: [
-            { author: 'Leader', text: 'Dùng Spring Security OAuth2, FE redirect qua Vite proxy', date: '2026-03-02' },
-            { author: 'Nguyễn Văn A', text: 'Đã hoàn thành login + callback page', date: '2026-03-08' },
-        ],
-    },
-    {
-        id: 'SWD-102',
-        title: 'Design Database Schema — User & Group',
-        description:
-            'Thiết kế database schema cho module User và Group. Bao gồm bảng users, roles, groups, group_members với foreign key constraints.',
-        sprint: 'Sprint 3',
-        priority: 'urgent',
-        status: 'in_progress',
-        dueDate: '2026-03-12',
-        assignee: mockMembers[1],
-        storyPoints: 3,
-        labels: ['database', 'design'],
-        createdDate: '2026-02-28',
-        comments: [
-            { author: 'Lecturer', text: 'Normalize đến 3NF nhé', date: '2026-03-01' },
-        ],
-    },
-    {
-        id: 'SWD-103',
-        title: 'Build Admin Dashboard UI',
-        description:
-            'Xây dựng giao diện Admin Dashboard bao gồm quản lý users, groups, và lecturer assignments.',
-        sprint: 'Sprint 3',
-        priority: 'medium',
-        status: 'in_progress',
-        dueDate: '2026-03-15',
-        assignee: mockMembers[2],
-        storyPoints: 8,
-        labels: ['frontend', 'admin'],
-        createdDate: '2026-03-03',
+// Chuyển đổi Jira Issue từ API → format mà UI đang dùng
+const mapIssue = (issue, members = []) => {
+    const assignee = members.find(
+        (m) => m.email === issue.assignee_email
+    ) || (issue.assignee_email ? { id: null, name: issue.assignee_email, email: issue.assignee_email, avatar: '?' } : null);
+    return {
+        id: issue.issue_key,
+        title: issue.summary,
+        description: issue.issue_type || '',
+        sprint: '',
+        priority: PRIORITY_MAP[issue.priority] || 'medium',
+        status: STATUS_MAP[issue.status] || 'todo',
+        dueDate: '',
+        assignee,
+        storyPoints: 0,
+        labels: issue.issue_type ? [issue.issue_type] : [],
+        createdDate: issue.created_at,
         comments: [],
-    },
-    {
-        id: 'SWD-104',
-        title: 'Jira API Integration — Sync Tasks',
-        description:
-            'Kết nối Jira API để đồng bộ tasks về hệ thống. Hỗ trợ sync sprint, issues, và status.',
-        sprint: 'Sprint 2',
-        priority: 'high',
-        status: 'done',
-        dueDate: '2026-03-05',
-        assignee: mockMembers[3],
-        storyPoints: 5,
-        labels: ['backend', 'jira'],
-        createdDate: '2026-02-20',
-        comments: [
-            { author: 'Leader', text: 'LGTM, merge vào develop', date: '2026-03-05' },
-        ],
-    },
-    {
-        id: 'SWD-105',
-        title: 'Write Unit Tests — Auth Module',
-        description:
-            'Viết unit tests cho Auth Service bao gồm: login, registration, token refresh, và password reset.',
-        sprint: 'Sprint 3',
-        priority: 'medium',
-        status: 'todo',
-        dueDate: '2026-03-18',
-        assignee: mockMembers[0],
-        storyPoints: 3,
-        labels: ['testing', 'auth'],
-        createdDate: '2026-03-04',
-        comments: [],
-    },
-    {
-        id: 'SWD-106',
-        title: 'Setup CI/CD Pipeline',
-        description:
-            'Cấu hình GitHub Actions cho CI/CD. Bao gồm build, test, lint. Deploy staging khi merge develop.',
-        sprint: 'Sprint 3',
-        priority: 'low',
-        status: 'in_review',
-        dueDate: '2026-03-14',
-        assignee: mockMembers[1],
-        storyPoints: 2,
-        labels: ['devops'],
-        createdDate: '2026-03-05',
-        comments: [],
-    },
-    {
-        id: 'SWD-107',
-        title: 'Implement Member Task View',
-        description:
-            'Xây dựng trang xem task cho member. Bao gồm filter, table, task detail dialog.',
-        sprint: 'Sprint 3',
-        priority: 'high',
-        status: 'in_progress',
-        dueDate: '2026-03-16',
-        assignee: mockMembers[2],
-        storyPoints: 5,
-        labels: ['frontend'],
-        createdDate: '2026-03-06',
-        comments: [
-            { author: 'Leader', text: 'Theo style Vuexy theme', date: '2026-03-06' },
-        ],
-    },
-    {
-        id: 'SWD-108',
-        title: 'API Documentation — Swagger',
-        description:
-            'Thêm Swagger/OpenAPI annotations cho tất cả REST endpoints. Cấu hình Swagger UI.',
-        sprint: 'Sprint 3',
-        priority: 'low',
-        status: 'todo',
-        dueDate: '2026-03-20',
-        assignee: null,
-        storyPoints: 2,
-        labels: ['documentation'],
-        createdDate: '2026-03-07',
-        comments: [],
-    },
-];
+        _raw: issue, // giữ raw data nếu cần
+    };
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -279,7 +184,12 @@ function AvatarCircle({ name, size = 'sm' }) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function LeaderTasksPage() {
-    const [tasks, setTasks] = useState(mockTasks);
+    const user = useSelector(selectCurrentUser);
+    const activeGroupId = useSelector((state) => state.ui?.activeGroupId);
+
+    const [tasks, setTasks] = useState([]);
+    const [members, setMembers] = useState([]);
+    const [loading, setLoading] = useState(true);
     const [statusFilter, setStatusFilter] = useState('all');
     const [priorityFilter, setPriorityFilter] = useState('all');
     const [assigneeFilter, setAssigneeFilter] = useState('all');
@@ -293,11 +203,46 @@ export function LeaderTasksPage() {
         description: '',
         priority: 'medium',
         status: 'todo',
-        sprint: 'Sprint 3',
+        sprint: '',
         dueDate: '',
         assigneeId: '',
         storyPoints: 1,
     });
+
+    // Lấy groupId từ Redux hoặc user's groups
+    const groupId = activeGroupId || user?.groups?.[0]?.group_id;
+
+    // Fetch data từ API
+    const fetchData = useCallback(async () => {
+        if (!groupId) {
+            setLoading(false);
+            return;
+        }
+        setLoading(true);
+        try {
+            const [issuesRes, membersRes] = await Promise.all([
+                getJiraIssuesApi(groupId).catch(() => ({ data: [] })),
+                getMembersApi(groupId).catch(() => ({ data: [] })),
+            ]);
+            const membersList = Array.isArray(membersRes?.data) ? membersRes.data : (Array.isArray(membersRes) ? membersRes : []);
+            const issuesList = Array.isArray(issuesRes?.data) ? issuesRes.data : (Array.isArray(issuesRes) ? issuesRes : []);
+            setMembers(membersList.map((m) => ({
+                id: m.user_id || m.id,
+                name: m.full_name || m.name || m.email,
+                email: m.email,
+                avatar: (m.full_name || m.name || '?').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase(),
+            })));
+            setTasks(issuesList.map((issue) => mapIssue(issue, membersList)));
+        } catch {
+            toast.error('Không thể tải dữ liệu');
+        } finally {
+            setLoading(false);
+        }
+    }, [groupId]);
+
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
 
     // Filter logic
     const filteredTasks = tasks.filter((task) => {
@@ -350,7 +295,7 @@ export function LeaderTasksPage() {
     // Assign handler
     const handleAssign = (memberId) => {
         if (!assignTarget) return;
-        const member = mockMembers.find((m) => m.id === memberId);
+        const member = members.find((m) => m.id === memberId);
         setTasks((prev) =>
             prev.map((t) => (t.id === assignTarget.id ? { ...t, assignee: member } : t)),
         );
@@ -365,7 +310,7 @@ export function LeaderTasksPage() {
             toast.error('Vui lòng nhập tên task');
             return;
         }
-        const member = mockMembers.find((m) => m.id === newTask.assigneeId) || null;
+        const member = members.find((m) => m.id === newTask.assigneeId) || null;
         const task = {
             id: `SWD-${100 + tasks.length + 1}`,
             title: newTask.title,
@@ -492,7 +437,7 @@ export function LeaderTasksPage() {
                             <SelectContent>
                                 <SelectItem value="all">All Members</SelectItem>
                                 <SelectItem value="unassigned">Unassigned</SelectItem>
-                                {mockMembers.map((m) => (
+                                {members.map((m) => (
                                     <SelectItem key={m.id} value={m.id}>
                                         {m.name}
                                     </SelectItem>
@@ -777,7 +722,7 @@ export function LeaderTasksPage() {
                         <span className="font-mono font-semibold text-primary">{assignTarget?.id}</span>
                     </p>
                     <div className="space-y-2 pt-2">
-                        {mockMembers.map((member) => (
+                        {members.map((member) => (
                             <button
                                 key={member.id}
                                 className="flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left transition-colors hover:bg-muted/50"
@@ -867,7 +812,7 @@ export function LeaderTasksPage() {
                                     <SelectTrigger><SelectValue placeholder="Select member..." /></SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="none">Unassigned</SelectItem>
-                                        {mockMembers.map((m) => (
+                                        {members.map((m) => (
                                             <SelectItem key={m.id} value={m.id}>
                                                 {m.name}
                                             </SelectItem>

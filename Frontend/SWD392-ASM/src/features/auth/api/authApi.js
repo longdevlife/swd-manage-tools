@@ -12,5 +12,10 @@ export const registerApi = (data) =>
 export const getMeApi = () =>
   axiosClient.get(API_ENDPOINTS.AUTH.ME);
 
-export const getGoogleLoginUrl = () =>
-  `${axiosClient.defaults.baseURL}${API_ENDPOINTS.AUTH.GOOGLE}`;
+// Google OAuth: redirect trực tiếp đến backend passport route
+// axiosClient.baseURL = /api, nhưng đây là window.location.href nên cần full path
+export const getGoogleLoginUrl = () => '/api/auth/google';
+
+// Exchange code for token (nếu backend trả code thay vì redirect trực tiếp)
+export const handleGoogleCallback = (code) =>
+  axiosClient.get(`${API_ENDPOINTS.AUTH.GOOGLE_CALLBACK}?code=${code}`);

@@ -108,6 +108,18 @@ export const getMe = async (req, res, next) => {
 export const googleCallback = async (req, res) => {
   const token = generateToken(req.user.user_id);
 
-  const clientUrl = process.env.CLIENT_URL || "http://localhost:3000";
-  res.redirect(`${clientUrl}/auth/callback?token=${token}`);
+  // Lấy role(s) của user
+  const userWithRoles = await prisma.user.findUnique({
+    where: { user_id: req.user.user_id },
+    include: { user_roles: { include: { role: true } } },
+  });
+  const role = userWithRoles?.user_roles?.[0]?.role?.role_name || 'MEMBER';
+
+  const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+  const params = new URLSearchParams({
+    token,
+    email: req.user.email || '',
+    role,
+  });
+  res.redirect(`${clientUrl}/auth/callback?${params}`);
 };

@@ -1,32 +1,24 @@
+import { useState, useEffect, useCallback } from 'react';
+import { useSelector } from 'react-redux';
 import { Plus } from 'lucide-react';
 
+import { selectCurrentUser } from '@/stores/authSlice';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
-const mockTasks = [
-  { id: 1, title: 'Design Dashboard UI', status: 'done', priority: 'high' },
-  {
-    id: 2,
-    title: 'Integrate Login API',
-    status: 'in_progress',
-    priority: 'urgent',
-  },
-  {
-    id: 3,
-    title: 'Write unit tests for Auth module',
-    status: 'todo',
-    priority: 'medium',
-  },
-  {
-    id: 4,
-    title: 'Setup CI/CD pipeline',
-    status: 'in_review',
-    priority: 'low',
-  },
-];
+import { getJiraIssuesApi } from '@/features/jira/api/jiraApi';
 
-const statusMap = {
+const STATUS_MAP = {
+  'To Do': 'todo',
+  'In Progress': 'in_progress',
+  'In Review': 'in_review',
+  Done: 'done',
+  Closed: 'done',
+  Resolved: 'done',
+};
+
+const statusConfig = {
   todo: { label: 'To Do', variant: 'secondary' },
   in_progress: { label: 'In Progress', variant: 'default' },
   in_review: { label: 'In Review', variant: 'outline' },
@@ -34,6 +26,33 @@ const statusMap = {
 };
 
 export function TasksPage() {
+  const user = useSelector(selectCurrentUser);
+  const activeGroupId = useSelector((state) => state.ui?.activeGroupId);
+  const groupId = activeGroupId || user?.groups?.[0]?.group_id;
+  const [tasks, setTasks] = useState([]);
+
+  const fetchTasks = useCallback(async () => {
+    if (!groupId) return;
+    try {
+      const res = await getJiraIssuesApi(groupId);
+      const issues = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+      setTasks(
+        issues.map((i) => ({
+          id: i.issue_key || i.id,
+          title: i.summary || i.title || '',
+          status: STATUS_MAP[i.status] || 'todo',
+          priority: (i.priority || '').toLowerCase(),
+        })),
+      );
+    } catch {
+      /* empty */
+    }
+  }, [groupId]);
+
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -49,24 +68,30 @@ export function TasksPage() {
 
       {/* Task Cards */}
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {mockTasks.map((task) => {
-          const status = statusMap[task.status] || statusMap.todo;
-          return (
-            <Card
-              key={task.id}
-              className="cursor-pointer shadow-sm transition-shadow hover:shadow-md"
-            >
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <CardTitle className="text-base">{task.title}</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <Badge variant={status.variant}>{status.label}</Badge>
-              </CardContent>
-            </Card>
-          );
-        })}
+        {tasks.length === 0 ? (
+          <p className="text-sm text-muted-foreground col-span-full text-center py-8">
+            No tasks found
+          </p>
+        ) : (
+          tasks.map((task) => {
+            const status = statusConfig[task.status] || statusConfig.todo;
+            return (
+              <Card
+                key={task.id}
+                className="cursor-pointer shadow-sm transition-shadow hover:shadow-md"
+              >
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <CardTitle className="text-base">{task.title}</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <Badge variant={status.variant}>{status.label}</Badge>
+                </CardContent>
+              </Card>
+            );
+          })
+        )}
       </div>
     </div>
   );

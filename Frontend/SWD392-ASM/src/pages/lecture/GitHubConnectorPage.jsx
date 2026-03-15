@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from '@/components/PageHeader';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,116 +9,76 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Github, GitBranch, GitCommit, Calendar, User, CheckCircle2, XCircle, RefreshCw, Link as LinkIcon, ExternalLink, Trash2 } from 'lucide-react';
-
-// Mock data for connected repositories
-const mockConnectedRepos = [
-  {
-    id: 1,
-    studentName: 'John Smith',
-    studentId: 'SE160001',
-    repoUrl: 'https://github.com/johnsmith/swd-project',
-    repoName: 'swd-project',
-    status: 'connected',
-    lastSync: '2024-03-07 10:30',
-    totalCommits: 45,
-    branch: 'main'
-  },
-  {
-    id: 2,
-    studentName: 'Emily Johnson',
-    studentId: 'SE160002',
-    repoUrl: 'https://github.com/emilyjohnson/web-app',
-    repoName: 'web-app',
-    status: 'connected',
-    lastSync: '2024-03-07 09:15',
-    totalCommits: 32,
-    branch: 'develop'
-  },
-  {
-    id: 3,
-    studentName: 'Michael Brown',
-    studentId: 'SE160003',
-    repoUrl: 'https://github.com/michaelbrown/mobile-app',
-    repoName: 'mobile-app',
-    status: 'error',
-    lastSync: '2024-03-06 14:20',
-    totalCommits: 28,
-    branch: 'main'
-  },
-];
-
-// Mock data for commits
-const mockCommits = [
-  {
-    id: 1,
-    studentName: 'John Smith',
-    studentId: 'SE160001',
-    message: 'Add user authentication module',
-    author: 'John Smith',
-    date: '2024-03-07 10:25',
-    sha: 'a1b2c3d',
-    branch: 'main',
-    additions: 156,
-    deletions: 23
-  },
-  {
-    id: 2,
-    studentName: 'John Smith',
-    studentId: 'SE160001',
-    message: 'Fix login validation bug',
-    author: 'John Smith',
-    date: '2024-03-07 09:45',
-    sha: 'e4f5g6h',
-    branch: 'main',
-    additions: 12,
-    deletions: 8
-  },
-  {
-    id: 3,
-    studentName: 'Emily Johnson',
-    studentId: 'SE160002',
-    message: 'Implement dashboard UI',
-    author: 'Emily Johnson',
-    date: '2024-03-07 09:10',
-    sha: 'i7j8k9l',
-    branch: 'develop',
-    additions: 243,
-    deletions: 15
-  },
-  {
-    id: 4,
-    studentName: 'Emily Johnson',
-    studentId: 'SE160002',
-    message: 'Update API endpoints',
-    author: 'Emily Johnson',
-    date: '2024-03-06 16:30',
-    sha: 'm0n1o2p',
-    branch: 'develop',
-    additions: 89,
-    deletions: 34
-  },
-  {
-    id: 5,
-    studentName: 'Michael Brown',
-    studentId: 'SE160003',
-    message: 'Setup project structure',
-    author: 'Michael Brown',
-    date: '2024-03-06 14:15',
-    sha: 'q3r4s5t',
-    branch: 'main',
-    additions: 312,
-    deletions: 0
-  },
-];
+import { useSelector } from 'react-redux';
+import { selectCurrentUser } from '@/stores/authSlice';
+import { getGitHubConfigApi, getCommitsApi, syncCommitsApi, configureGitHubApi } from '@/features/github/api/githubApi';
+import { getGroupsApi } from '@/features/groups/api/groupsApi';
+import { toast } from 'sonner';
 
 export function GitHubConnectorPage() {
-  const [connectedRepos, setConnectedRepos] = useState(mockConnectedRepos);
-  const [commits, setCommits] = useState(mockCommits);
+  useSelector(selectCurrentUser);
+  const [connectedRepos, setConnectedRepos] = useState([]);
+  const [commits, setCommits] = useState([]);
   const [isAddRepoDialogOpen, setIsAddRepoDialogOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState('all');
   const [githubToken, setGithubToken] = useState('');
   const [isTokenSaved, setIsTokenSaved] = useState(false);
   const [syncingRepoId, setSyncingRepoId] = useState(null);
+
+  // Fetch data from APIs
+  const fetchData = useCallback(async () => {
+    try {
+      const groupsRes = await getGroupsApi().catch(() => ({ data: [] }));
+      const groupsList = Array.isArray(groupsRes?.data) ? groupsRes.data : Array.isArray(groupsRes) ? groupsRes : [];
+      const repos = [];
+      const allCommits = [];
+      for (const g of groupsList) {
+        const gid = g.group_id || g.id;
+        try {
+          const cfg = await getGitHubConfigApi(gid).catch(() => null);
+          if (cfg?.data || cfg) {
+            const config = cfg?.data || cfg;
+            repos.push({
+              id: gid,
+              studentName: g.group_name || g.name || `Group ${gid}`,
+              studentId: `GRP-${gid}`,
+              repoUrl: config.repo_url || config.repository || '',
+              repoName: (config.repo_url || config.repository || '').split('/').pop() || '',
+              status: config.repo_url ? 'connected' : 'error',
+              lastSync: config.last_synced_at || config.updated_at || '',
+              totalCommits: 0,
+              branch: config.branch || 'main',
+            });
+          }
+        } catch { /* skip */ }
+        try {
+          const commitsRes = await getCommitsApi(gid).catch(() => ({ data: [] }));
+          const cList = Array.isArray(commitsRes?.data) ? commitsRes.data : Array.isArray(commitsRes) ? commitsRes : [];
+          cList.forEach((c) => {
+            allCommits.push({
+              id: c.id || c.commit_sha,
+              studentName: g.group_name || g.name || '',
+              studentId: `GRP-${gid}`,
+              message: c.message || c.commit_message || '',
+              author: c.author_name || c.author || '',
+              date: c.committed_at || c.created_at || '',
+              sha: (c.sha || c.commit_sha || '').slice(0, 7),
+              branch: c.branch || 'main',
+              additions: c.additions || 0,
+              deletions: c.deletions || 0,
+            });
+          });
+          // Update repo commit count
+          const r = repos.find((r) => r.id === gid);
+          if (r) r.totalCommits = cList.length;
+        } catch { /* skip */ }
+      }
+      setConnectedRepos(repos);
+      setCommits(allCommits);
+    } catch { /* empty */ }
+  }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   // New repo form state
   const [newRepo, setNewRepo] = useState({
@@ -128,24 +88,57 @@ export function GitHubConnectorPage() {
     branch: 'main'
   });
 
-  const handleSaveToken = () => {
-    if (githubToken.trim()) {
+  const handleSaveToken = async () => {
+    if (!githubToken.trim()) return;
+    // Try configuring the first available group with this token
+    const gid = connectedRepos[0]?.id;
+    if (gid) {
+      try {
+        await configureGitHubApi(gid, { github_token: githubToken.trim() });
+        setIsTokenSaved(true);
+        toast.success('GitHub token saved!');
+      } catch {
+        toast.error('Failed to save token');
+      }
+    } else {
       setIsTokenSaved(true);
-      // Here you would save the token to backend
     }
   };
 
-  const handleSyncRepo = (repoId) => {
+  const handleSyncRepo = async (repoId) => {
     setSyncingRepoId(repoId);
-    // Simulate API call
-    setTimeout(() => {
-      setConnectedRepos(repos => repos.map(repo => 
-        repo.id === repoId 
-          ? { ...repo, lastSync: new Date().toLocaleString('sv-SE').replace('T', ' ').slice(0, -3), status: 'connected' }
+    try {
+      await syncCommitsApi(repoId);
+      setConnectedRepos(repos => repos.map(repo =>
+        repo.id === repoId
+          ? { ...repo, lastSync: new Date().toISOString(), status: 'connected' }
           : repo
       ));
-      setSyncingRepoId(null);
-    }, 1500);
+      toast.success('Sync completed!');
+      // Refresh commits for this group
+      const commitsRes = await getCommitsApi(repoId).catch(() => ({ data: [] }));
+      const cList = Array.isArray(commitsRes?.data) ? commitsRes.data : [];
+      // Update global commits list
+      setCommits((prev) => {
+        const filtered = prev.filter((c) => c.studentId !== `GRP-${repoId}`);
+        const newCommits = cList.map((c) => ({
+          id: c.id || c.commit_sha,
+          studentName: connectedRepos.find(r => r.id === repoId)?.studentName || '',
+          studentId: `GRP-${repoId}`,
+          message: c.message || c.commit_message || '',
+          author: c.author_name || c.author || '',
+          date: c.committed_at || c.created_at || '',
+          sha: (c.sha || c.commit_sha || '').slice(0, 7),
+          branch: c.branch || 'main',
+          additions: c.additions || 0,
+          deletions: c.deletions || 0,
+        }));
+        return [...newCommits, ...filtered];
+      });
+    } catch {
+      toast.error('Sync failed');
+    }
+    setSyncingRepoId(null);
   };
 
   const handleAddRepo = () => {

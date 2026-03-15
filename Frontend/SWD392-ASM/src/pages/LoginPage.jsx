@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { authService } from '@/services/authService';
+import { getGoogleLoginUrl } from '@/features/auth/api/authApi';
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -11,7 +11,7 @@ export function LoginPage() {
 
   const handleGoogleLogin = () => {
     setIsLoading(true);
-    window.location.href = authService.getGoogleLoginUrl();
+    window.location.href = getGoogleLoginUrl();
   };
 
   return (

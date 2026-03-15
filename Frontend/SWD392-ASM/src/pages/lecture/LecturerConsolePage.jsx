@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useSelector } from 'react-redux';
+import { selectCurrentUser } from '@/stores/authSlice';
 import { Search, Users, Mail, Phone, BookOpen, Eye, UserCheck } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,119 +23,55 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-
-const mockGroups = [
-  { id: 1, name: 'Group 1', project: 'E-Commerce Platform', members: 5 },
-  { id: 2, name: 'Group 2', project: 'Learning Management System', members: 4 },
-  { id: 3, name: 'Group 3', project: 'Task Management App', members: 5 },
-  { id: 4, name: 'Group 4', project: 'Social Media Dashboard', members: 4 },
-];
-
-const mockStudents = [
-  {
-    id: 1,
-    name: 'Nguyen Van A',
-    email: 'nguyenvana@example.com',
-    phone: '0901234567',
-    groupId: 1,
-    groupName: 'Group 1',
-    role: 'Leader',
-    attendance: 95,
-    tasksCompleted: 12,
-    tasksTotal: 15,
-  },
-  {
-    id: 2,
-    name: 'Tran Thi B',
-    email: 'tranthib@example.com',
-    phone: '0901234568',
-    groupId: 1,
-    groupName: 'Group 1',
-    role: 'Member',
-    attendance: 90,
-    tasksCompleted: 10,
-    tasksTotal: 12,
-  },
-  {
-    id: 3,
-    name: 'Le Van C',
-    email: 'levanc@example.com',
-    phone: '0901234569',
-    groupId: 1,
-    groupName: 'Group 1',
-    role: 'Member',
-    attendance: 88,
-    tasksCompleted: 9,
-    tasksTotal: 12,
-  },
-  {
-    id: 4,
-    name: 'Pham Thi D',
-    email: 'phamthid@example.com',
-    phone: '0901234570',
-    groupId: 2,
-    groupName: 'Group 2',
-    role: 'Leader',
-    attendance: 92,
-    tasksCompleted: 11,
-    tasksTotal: 13,
-  },
-  {
-    id: 5,
-    name: 'Hoang Van E',
-    email: 'hoangvane@example.com',
-    phone: '0901234571',
-    groupId: 2,
-    groupName: 'Group 2',
-    role: 'Member',
-    attendance: 85,
-    tasksCompleted: 8,
-    tasksTotal: 11,
-  },
-  {
-    id: 6,
-    name: 'Nguyen Thi F',
-    email: 'nguyenthif@example.com',
-    phone: '0901234572',
-    groupId: 3,
-    groupName: 'Group 3',
-    role: 'Leader',
-    attendance: 94,
-    tasksCompleted: 13,
-    tasksTotal: 14,
-  },
-  {
-    id: 7,
-    name: 'Tran Van G',
-    email: 'tranvang@example.com',
-    phone: '0901234573',
-    groupId: 3,
-    groupName: 'Group 3',
-    role: 'Member',
-    attendance: 87,
-    tasksCompleted: 9,
-    tasksTotal: 13,
-  },
-  {
-    id: 8,
-    name: 'Le Thi H',
-    email: 'lethih@example.com',
-    phone: '0901234574',
-    groupId: 4,
-    groupName: 'Group 4',
-    role: 'Leader',
-    attendance: 91,
-    tasksCompleted: 10,
-    tasksTotal: 12,
-  },
-];
+import { getGroupsApi, getMembersApi } from '@/features/groups/api/groupsApi';
 
 export function LecturerConsolePage() {
+  const user = useSelector(selectCurrentUser);
+  const [groups, setGroups] = useState([]);
+  const [students, setStudents] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterGroup, setFilterGroup] = useState('all');
 
+  const fetchData = useCallback(async () => {
+    try {
+      const res = await getGroupsApi();
+      const groupsList = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
+      setGroups(groupsList.map((g) => ({
+        id: g.group_id || g.id,
+        name: g.group_name || g.name || `Group ${g.group_id}`,
+        project: g.project_name || g.group_name || '',
+        members: g.member_count || g.members?.length || 0,
+      })));
+      // Fetch members for all groups
+      const allStudents = [];
+      for (const g of groupsList) {
+        try {
+          const membersRes = await getMembersApi(g.group_id || g.id);
+          const membersList = Array.isArray(membersRes?.data) ? membersRes.data : (Array.isArray(membersRes) ? membersRes : []);
+          membersList.forEach((m) => {
+            allStudents.push({
+              id: m.user_id || m.id,
+              name: m.full_name || m.name || m.email,
+              email: m.email || '',
+              phone: '',
+              groupId: g.group_id || g.id,
+              groupName: g.group_name || g.name || `Group ${g.group_id}`,
+              role: m.role || 'Member',
+              attendance: 0,
+              tasksCompleted: 0,
+              tasksTotal: 0,
+            });
+          });
+        } catch { /* skip group */ }
+      }
+      setStudents(allStudents);
+    } catch { /* empty */ }
+  }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
   // Filter students
-  const filteredStudents = mockStudents.filter((student) => {
+  const filteredStudents = students.filter((student) => {
     const matchesSearch =
       student.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       student.email.toLowerCase().includes(searchQuery.toLowerCase());
@@ -171,7 +109,7 @@ export function LecturerConsolePage() {
             <Users className="h-5 w-5 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{mockGroups.length}</div>
+            <div className="text-2xl font-bold">{groups.length}</div>
           </CardContent>
         </Card>
         <Card>
@@ -182,7 +120,7 @@ export function LecturerConsolePage() {
             <UserCheck className="h-5 w-5 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{mockStudents.length}</div>
+            <div className="text-2xl font-bold">{students.length}</div>
           </CardContent>
         </Card>
         <Card>
@@ -195,7 +133,7 @@ export function LecturerConsolePage() {
           <CardContent>
             <div className="text-2xl font-bold">
               {Math.round(
-                mockStudents.reduce((sum, s) => sum + s.attendance, 0) / mockStudents.length
+                students.reduce((sum, s) => sum + s.attendance, 0) / students.length
               )}
               %
             </div>
@@ -209,7 +147,7 @@ export function LecturerConsolePage() {
             <BookOpen className="h-5 w-5 text-purple-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{mockGroups.length}</div>
+            <div className="text-2xl font-bold">{groups.length}</div>
           </CardContent>
         </Card>
       </div>
@@ -221,7 +159,7 @@ export function LecturerConsolePage() {
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {mockGroups.map((group) => (
+            {groups.map((group) => (
               <Card key={group.id} className="border-2">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">{group.name}</CardTitle>
@@ -256,7 +194,7 @@ export function LecturerConsolePage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Groups</SelectItem>
-            {mockGroups.map((group) => (
+            {groups.map((group) => (
               <SelectItem key={group.id} value={group.id.toString()}>
                 {group.name}
               </SelectItem>

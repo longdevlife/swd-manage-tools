@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   GitCommit,
   CheckCircle2,
@@ -39,146 +39,20 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-// ─── Mock Data ────────────────────────────────────────────────────────────────
+import { useSelector } from 'react-redux';
+import { selectCurrentUser } from '@/stores/authSlice';
+import { getJiraIssuesApi } from '@/features/jira/api/jiraApi';
+import { getCommitsApi } from '@/features/github/api/githubApi';
 
-const taskStats = {
-  total: 7,
-  todo: 2,
-  inProgress: 2,
-  inReview: 1,
-  done: 2,
-  completionRate: 28.6, // 2/7
-  sprintPoints: { completed: 3, total: 21 },
+// ─── Status Mapping ────────────────────────────────────────────────────────────
+const STATUS_MAP = {
+  'To Do': 'todo',
+  'In Progress': 'in_progress',
+  'In Review': 'in_review',
+  Done: 'done',
+  Closed: 'done',
+  Resolved: 'done',
 };
-
-const recentTasks = [
-  {
-    id: 'SWP-104',
-    title: 'Setup CI/CD pipeline with GitHub Actions',
-    status: 'done',
-    completedDate: '2026-03-05',
-    storyPoints: 2,
-  },
-  {
-    id: 'SWP-107',
-    title: 'Fix CORS configuration for frontend',
-    status: 'done',
-    completedDate: '2026-03-04',
-    storyPoints: 1,
-  },
-  {
-    id: 'SWP-101',
-    title: 'Implement Login API endpoint',
-    status: 'in_progress',
-    completedDate: null,
-    storyPoints: 5,
-  },
-  {
-    id: 'SWP-106',
-    title: 'Create API documentation with Swagger',
-    status: 'in_progress',
-    completedDate: null,
-    storyPoints: 2,
-  },
-  {
-    id: 'SWP-102',
-    title: 'Design Database Schema for User module',
-    status: 'in_review',
-    completedDate: null,
-    storyPoints: 3,
-  },
-];
-
-const commitHistory = [
-  {
-    sha: 'a1b2c3d',
-    message: 'feat(auth): implement JWT login endpoint',
-    date: '2026-03-07',
-    time: '14:30',
-    filesChanged: 4,
-    additions: 156,
-    deletions: 12,
-    qualityScore: 92,
-    branch: 'feature/login-api',
-  },
-  {
-    sha: 'e4f5g6h',
-    message: 'fix(cors): add allowed origins for frontend',
-    date: '2026-03-06',
-    time: '16:45',
-    filesChanged: 2,
-    additions: 24,
-    deletions: 3,
-    qualityScore: 88,
-    branch: 'hotfix/cors',
-  },
-  {
-    sha: 'i7j8k9l',
-    message: 'feat(db): create User entity and repository',
-    date: '2026-03-06',
-    time: '10:20',
-    filesChanged: 5,
-    additions: 203,
-    deletions: 0,
-    qualityScore: 95,
-    branch: 'feature/user-schema',
-  },
-  {
-    sha: 'm1n2o3p',
-    message: 'docs(api): add Swagger annotations to AuthController',
-    date: '2026-03-05',
-    time: '15:10',
-    filesChanged: 3,
-    additions: 87,
-    deletions: 5,
-    qualityScore: 85,
-    branch: 'feature/swagger-docs',
-  },
-  {
-    sha: 'q4r5s6t',
-    message: 'ci: setup GitHub Actions workflow',
-    date: '2026-03-04',
-    time: '09:30',
-    filesChanged: 2,
-    additions: 78,
-    deletions: 0,
-    qualityScore: 90,
-    branch: 'feature/ci-cd',
-  },
-  {
-    sha: 'u7v8w9x',
-    message: 'feat(auth): add password hashing with bcrypt',
-    date: '2026-03-03',
-    time: '11:00',
-    filesChanged: 3,
-    additions: 65,
-    deletions: 8,
-    qualityScore: 91,
-    branch: 'feature/login-api',
-  },
-  {
-    sha: 'y1z2a3b',
-    message: 'refactor: extract common validation utils',
-    date: '2026-03-02',
-    time: '14:15',
-    filesChanged: 6,
-    additions: 112,
-    deletions: 45,
-    qualityScore: 87,
-    branch: 'refactor/validation',
-  },
-];
-
-// Daily commit data for the last 7 days
-const dailyCommits = [
-  { day: 'Mon', date: '03/02', count: 1 },
-  { day: 'Tue', date: '03/03', count: 1 },
-  { day: 'Wed', date: '03/04', count: 1 },
-  { day: 'Thu', date: '03/05', count: 1 },
-  { day: 'Fri', date: '03/06', count: 2 },
-  { day: 'Sat', date: '03/07', count: 1 },
-  { day: 'Sun', date: '03/08', count: 0 },
-];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -225,8 +99,80 @@ function formatDate(dateStr) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function MemberStatsPage() {
+  const user = useSelector(selectCurrentUser);
+  const activeGroupId = useSelector((state) => state.ui?.activeGroupId);
+  const groupId = activeGroupId || user?.groups?.[0]?.group_id;
   const [timeRange, setTimeRange] = useState('week');
+  const [taskStats, setTaskStats] = useState({ total: 0, todo: 0, inProgress: 0, inReview: 0, done: 0, completionRate: 0, sprintPoints: { completed: 0, total: 0 } });
+  const [recentTasks, setRecentTasks] = useState([]);
+  const [commitHistory, setCommitHistory] = useState([]);
+  const [dailyCommits, setDailyCommits] = useState([]);
 
+  const fetchData = useCallback(async () => {
+    if (!groupId) return;
+    try {
+      // Fetch Jira issues for this user
+      const issuesRes = await getJiraIssuesApi(groupId).catch(() => ({ data: [] }));
+      const allIssues = Array.isArray(issuesRes?.data) ? issuesRes.data : Array.isArray(issuesRes) ? issuesRes : [];
+      const myIssues = user?.email ? allIssues.filter((i) => i.assignee_email === user.email) : allIssues;
+      const mapped = myIssues.map((i) => ({ ...i, _status: STATUS_MAP[i.status] || 'todo' }));
+      const todo = mapped.filter((t) => t._status === 'todo').length;
+      const inProg = mapped.filter((t) => t._status === 'in_progress').length;
+      const inRev = mapped.filter((t) => t._status === 'in_review').length;
+      const done = mapped.filter((t) => t._status === 'done').length;
+      const total = mapped.length;
+      setTaskStats({
+        total,
+        todo,
+        inProgress: inProg,
+        inReview: inRev,
+        done,
+        completionRate: total > 0 ? Math.round((done / total) * 100 * 10) / 10 : 0,
+        sprintPoints: { completed: done, total },
+      });
+      setRecentTasks(mapped.slice(0, 5).map((i) => ({
+        id: i.issue_key || i.id,
+        title: i.summary || '',
+        status: i._status,
+        completedDate: i._status === 'done' ? i.updated_at || null : null,
+        storyPoints: 1,
+      })));
+
+      // Fetch GitHub commits
+      const commitsRes = await getCommitsApi(groupId).catch(() => ({ data: [] }));
+      const commits = Array.isArray(commitsRes?.data) ? commitsRes.data : Array.isArray(commitsRes) ? commitsRes : [];
+      const myCommits = user?.email ? commits.filter((c) => (c.author_email || c.author || '').includes(user.email.split('@')[0])) : commits;
+      setCommitHistory(myCommits.slice(0, 7).map((c) => {
+        const d = c.committed_at || c.created_at || '';
+        const dateObj = d ? new Date(d) : null;
+        return {
+          sha: (c.sha || c.commit_sha || '').slice(0, 7),
+          message: c.message || c.commit_message || '',
+          date: dateObj ? dateObj.toISOString().split('T')[0] : '',
+          time: dateObj ? dateObj.toTimeString().slice(0, 5) : '',
+          filesChanged: c.files_changed || 0,
+          additions: c.additions || 0,
+          deletions: c.deletions || 0,
+          qualityScore: 85,
+          branch: c.branch || 'main',
+        };
+      }));
+
+      // Compute daily commits (last 7 days)
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const daily = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date();
+        d.setDate(d.getDate() - (6 - i));
+        const dateStr = `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+        const dayKey = d.toISOString().split('T')[0];
+        const count = myCommits.filter((c) => (c.committed_at || c.created_at || '').startsWith(dayKey)).length;
+        return { day: days[d.getDay()], date: dateStr, count };
+      });
+      setDailyCommits(daily);
+    } catch { /* empty */ }
+  }, [groupId, user?.email]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
   const totalCommits = commitHistory.length;
   const avgQuality = Math.round(
     commitHistory.reduce((sum, c) => sum + c.qualityScore, 0) / totalCommits,

@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useSelector } from 'react-redux';
+import { selectCurrentUser } from '@/stores/authSlice';
 import {
   ListTodo,
   Clock,
@@ -38,132 +40,30 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 
-// ─── Mock Data ────────────────────────────────────────────────────────────────
+import { getJiraIssuesApi } from '@/features/jira/api/jiraApi';
 
-const mockTasks = [
-  {
-    id: 'SWP-101',
-    title: 'Implement Login API endpoint',
-    description:
-      'Create RESTful API endpoint for user authentication using JWT tokens. Include input validation, password hashing with bcrypt, and proper error handling for invalid credentials.',
-    sprint: 'Sprint 3',
-    priority: 'high',
-    status: 'in_progress',
-    dueDate: '2026-03-12',
-    assignee: 'Nguyen Van A',
-    storyPoints: 5,
-    labels: ['backend', 'auth'],
-    createdDate: '2026-03-01',
-    comments: [
-      {
-        author: 'Team Leader',
-        text: 'Please use Spring Security for this module',
-        date: '2026-03-02',
-      },
-      {
-        author: 'Nguyen Van A',
-        text: 'Started coding, expect to finish by Wednesday',
-        date: '2026-03-03',
-      },
-    ],
-  },
-  {
-    id: 'SWP-102',
-    title: 'Design Database Schema for User module',
-    description:
-      'Design and implement database schema for the User module including tables for users, roles, and permissions with proper foreign key constraints.',
-    sprint: 'Sprint 3',
-    priority: 'urgent',
-    status: 'in_review',
-    dueDate: '2026-03-10',
-    assignee: 'Nguyen Van A',
-    storyPoints: 3,
-    labels: ['database', 'design'],
-    createdDate: '2026-02-28',
-    comments: [{ author: 'Lecturer', text: 'Remember to normalize to 3NF', date: '2026-03-01' }],
-  },
-  {
-    id: 'SWP-103',
-    title: 'Write unit tests for Auth Service',
-    description:
-      'Write comprehensive unit tests for the Authentication Service layer covering login, registration, token refresh, and password reset flows.',
-    sprint: 'Sprint 3',
-    priority: 'medium',
-    status: 'todo',
-    dueDate: '2026-03-15',
-    assignee: 'Nguyen Van A',
-    storyPoints: 3,
-    labels: ['testing'],
-    createdDate: '2026-03-03',
-    comments: [],
-  },
-  {
-    id: 'SWP-104',
-    title: 'Setup CI/CD pipeline with GitHub Actions',
-    description:
-      'Configure GitHub Actions workflow for continuous integration. Include build, test, and lint stages. Deploy to staging on merge to develop branch.',
-    sprint: 'Sprint 2',
-    priority: 'low',
-    status: 'done',
-    dueDate: '2026-03-05',
-    assignee: 'Nguyen Van A',
-    storyPoints: 2,
-    labels: ['devops'],
-    createdDate: '2026-02-20',
-    comments: [{ author: 'Team Leader', text: 'LGTM! Merged to develop', date: '2026-03-05' }],
-  },
-  {
-    id: 'SWP-105',
-    title: 'Implement User Registration flow',
-    description:
-      'Build the complete user registration flow including form validation, email verification, and redirect to login page after successful registration.',
-    sprint: 'Sprint 3',
-    priority: 'high',
-    status: 'todo',
-    dueDate: '2026-03-18',
-    assignee: 'Nguyen Van A',
-    storyPoints: 5,
-    labels: ['frontend', 'auth'],
-    createdDate: '2026-03-04',
-    comments: [],
-  },
-  {
-    id: 'SWP-106',
-    title: 'Create API documentation with Swagger',
-    description:
-      'Add Swagger/OpenAPI annotations to all REST endpoints. Configure Swagger UI for easy API exploration and testing.',
-    sprint: 'Sprint 3',
-    priority: 'medium',
-    status: 'in_progress',
-    dueDate: '2026-03-14',
-    assignee: 'Nguyen Van A',
-    storyPoints: 2,
-    labels: ['documentation'],
-    createdDate: '2026-03-05',
-    comments: [],
-  },
-  {
-    id: 'SWP-107',
-    title: 'Fix CORS configuration for frontend',
-    description:
-      'Resolve CORS issues preventing the React frontend from communicating with the Spring Boot backend. Configure allowed origins, headers, and methods.',
-    sprint: 'Sprint 2',
-    priority: 'urgent',
-    status: 'done',
-    dueDate: '2026-03-04',
-    assignee: 'Nguyen Van A',
-    storyPoints: 1,
-    labels: ['bugfix', 'backend'],
-    createdDate: '2026-03-02',
-    comments: [
-      {
-        author: 'Team Leader',
-        text: 'Urgent fix — frontend team is blocked',
-        date: '2026-03-02',
-      },
-    ],
-  },
-];
+// ─── Data Mapping ────────────────────────────────────────────────────────────
+const STATUS_MAP = {
+  'To Do': 'todo', 'In Progress': 'in_progress', 'In Review': 'in_review',
+  'Done': 'done', 'Closed': 'done', 'Resolved': 'done',
+};
+const PRIORITY_MAP = {
+  Highest: 'urgent', High: 'high', Medium: 'medium', Low: 'low', Lowest: 'low',
+};
+const mapIssue = (issue) => ({
+  id: issue.issue_key,
+  title: issue.summary,
+  description: issue.issue_type || '',
+  sprint: '',
+  priority: PRIORITY_MAP[issue.priority] || 'medium',
+  status: STATUS_MAP[issue.status] || 'todo',
+  dueDate: '',
+  assignee: issue.assignee_email || 'Unassigned',
+  storyPoints: 0,
+  labels: issue.issue_type ? [issue.issue_type] : [],
+  createdDate: issue.created_at,
+  comments: [],
+});
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -227,13 +127,33 @@ function isOverdue(dateStr, status) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function MemberTasksPage() {
+  const user = useSelector(selectCurrentUser);
+  const activeGroupId = useSelector((state) => state.ui?.activeGroupId);
+  const groupId = activeGroupId || user?.groups?.[0]?.group_id;
+
+  const [tasks, setTasks] = useState([]);
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTask, setSelectedTask] = useState(null);
 
+  const fetchTasks = useCallback(async () => {
+    if (!groupId) return;
+    try {
+      const res = await getJiraIssuesApi(groupId);
+      const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
+      // Filter by current user email
+      const myIssues = user?.email
+        ? list.filter((i) => i.assignee_email === user.email)
+        : list;
+      setTasks(myIssues.map(mapIssue));
+    } catch { /* empty */ }
+  }, [groupId, user?.email]);
+
+  useEffect(() => { fetchTasks(); }, [fetchTasks]);
+
   // Filter logic
-  const filteredTasks = mockTasks.filter((task) => {
+  const filteredTasks = tasks.filter((task) => {
     if (statusFilter !== 'all' && task.status !== statusFilter) return false;
     if (priorityFilter !== 'all' && task.priority !== priorityFilter) return false;
     if (searchQuery && !task.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
@@ -244,7 +164,7 @@ export function MemberTasksPage() {
   const stats = [
     {
       title: 'Total Tasks',
-      value: mockTasks.length,
+      value: tasks.length,
       icon: ListTodo,
       color: 'text-primary',
       bgColor: 'bg-primary/10',
@@ -254,7 +174,7 @@ export function MemberTasksPage() {
     },
     {
       title: 'In Progress',
-      value: mockTasks.filter((t) => t.status === 'in_progress').length,
+      value: tasks.filter((t) => t.status === 'in_progress').length,
       icon: Clock,
       color: 'text-[var(--warning)]',
       bgColor: 'bg-[var(--warning)]/10',
@@ -264,7 +184,7 @@ export function MemberTasksPage() {
     },
     {
       title: 'Completed',
-      value: mockTasks.filter((t) => t.status === 'done').length,
+      value: tasks.filter((t) => t.status === 'done').length,
       icon: CheckCircle2,
       color: 'text-[var(--success)]',
       bgColor: 'bg-[var(--success)]/10',
@@ -274,7 +194,7 @@ export function MemberTasksPage() {
     },
     {
       title: 'Overdue',
-      value: mockTasks.filter((t) => isOverdue(t.dueDate, t.status)).length,
+      value: tasks.filter((t) => isOverdue(t.dueDate, t.status)).length,
       icon: AlertCircle,
       color: 'text-destructive',
       bgColor: 'bg-destructive/10',

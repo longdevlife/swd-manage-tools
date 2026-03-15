@@ -13,41 +13,10 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      // Proxy OAuth start → backend
-      '/oauth2': {
-        target: 'http://localhost:8080',
-        changeOrigin: false,
-      },
-      // Proxy Google callback → backend, intercept JSON → redirect FE
-      '/login/oauth2': {
-        target: 'http://localhost:8080',
-        changeOrigin: false,
-        selfHandleResponse: true,
-        configure: (proxy) => {
-          proxy.on('proxyRes', (proxyRes, req, res) => {
-            let body = '';
-            proxyRes.on('data', (chunk) => { body += chunk; });
-            proxyRes.on('end', () => {
-              try {
-                const data = JSON.parse(body);
-                const params = new URLSearchParams({
-                  token: data.token || '',
-                  email: data.email || '',
-                  role: data.role || '',
-                });
-                res.writeHead(302, { Location: `/auth/callback?${params}` });
-                res.end();
-              } catch {
-                res.writeHead(proxyRes.statusCode, proxyRes.headers);
-                res.end(body);
-              }
-            });
-          });
-        },
-      },
-      // Proxy API → backend
+      // Proxy tất cả /api → backend Express (port 5000)
+      // Bao gồm cả OAuth routes: /api/auth/google và /api/auth/google/callback
       '/api': {
-        target: 'http://localhost:8080',
+        target: 'http://localhost:5000',
         changeOrigin: true,
       },
     },

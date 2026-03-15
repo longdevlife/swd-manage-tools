@@ -52,20 +52,38 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import {
-  getUsers,
-  getAllGroups,
-  createGroup,
-  deleteGroup,
-  addMember,
-  removeMember,
-  assignLeader,
-  removeLecturer,
-  getGroupRequests,
-  approveRequest,
-  rejectRequest,
-  createJiraProject,
-  testJiraConnection,
-} from '@/services/adminService';
+  getGroupsApi,
+  createGroupApi,
+  deleteGroupApi,
+  addMemberApi,
+  removeMemberApi,
+  assignLeaderApi,
+  removeLecturerApi,
+} from '@/features/groups/api/groupsApi';
+import { getUsersApi } from '@/features/users/api/usersApi';
+import { configureJiraApi } from '@/features/jira/api/jiraApi';
+
+// ── Wrappers: giữ nguyên function signatures mà AdminPage đang gọi ──
+const getUsers = (role) =>
+  getUsersApi(role && role !== 'ALL' ? { role } : {});
+const getAllGroups = () => getGroupsApi();
+const createGroup = (data) => createGroupApi(data);
+const deleteGroup = (groupId) => deleteGroupApi(groupId);
+const addMember = (groupId, userId) =>
+  addMemberApi(groupId, { userId });
+const removeMember = (groupId, userId) =>
+  removeMemberApi(groupId, userId);
+const assignLeader = (groupId, leaderId) =>
+  assignLeaderApi(groupId, { userId: leaderId });
+const removeLecturer = (groupId) =>
+  removeLecturerApi(groupId, null); // Backend route: DELETE /groups/:id/lecturers/:lecturerId
+const createJiraProject = (groupId, data) =>
+  configureJiraApi(groupId, data);
+// Stubs — backend chưa có routes cho các chức năng này
+const getGroupRequests = () => Promise.resolve([]);
+const approveRequest = () => Promise.reject(new Error('API chưa được triển khai'));
+const rejectRequest = () => Promise.reject(new Error('API chưa được triển khai'));
+const testJiraConnection = () => Promise.resolve({ status: 'ok' });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
