@@ -69,8 +69,10 @@ import { getUsersApi } from '@/features/users/api/usersApi';
 import { configureJiraApi } from '@/features/jira/api/jiraApi';
 
 // ── Wrappers: giữ nguyên function signatures mà AdminPage đang gọi ──
-const getUsers = (role) =>
-  getUsersApi(role && role !== 'ALL' ? { role } : {});
+const getUsers = (role) => {
+  const cleanRole = role && role !== 'ALL' ? role.replace(/^ROLE_/i, '') : null;
+  return getUsersApi(cleanRole ? { role: cleanRole } : {});
+};
 const getAllGroups = () => getGroupsApi();
 const createGroup = (data) => createGroupApi(data);
 const deleteGroup = (groupId) => deleteGroupApi(groupId);
@@ -195,8 +197,19 @@ function UsersTab() {
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getUsers(roleFilter);
-      setUsers(Array.isArray(data) ? data : []);
+      const res = await getUsers(roleFilter);
+      const list = res?.data || (Array.isArray(res) ? res : []);
+      const mapped = (Array.isArray(list) ? list : []).map((u) => ({
+        userId: u.user_id ?? u.userId,
+        email: u.email,
+        username: u.full_name ?? u.username ?? '—',
+        role: u.role ? (u.role.startsWith('ROLE_') ? u.role : `ROLE_${u.role}`) : 'ROLE_MEMBER',
+        yob: u.yob,
+        phoneNumber: u.phone_number ?? u.phoneNumber,
+        githubUsername: u.github_username ?? u.githubUsername,
+        jiraSynced: false,
+      }));
+      setUsers(mapped);
     } catch {
       toast.error('Không thể tải danh sách người dùng');
     } finally {
@@ -1220,8 +1233,9 @@ function JiraTab() {
   const fetchGroups = useCallback(async () => {
     setGroupsLoading(true);
     try {
-      const data = await getAllGroups();
-      setGroups(Array.isArray(data) ? data : []);
+      const res = await getAllGroups();
+      const list = res?.data || (Array.isArray(res) ? res : []);
+      setGroups(Array.isArray(list) ? list.map(mapGroup) : []);
     } catch {
       toast.error('Không thể tải danh sách nhóm');
     } finally {

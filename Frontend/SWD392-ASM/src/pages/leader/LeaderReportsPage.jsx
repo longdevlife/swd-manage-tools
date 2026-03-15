@@ -131,15 +131,15 @@ export function LeaderReportsPage() {
 
     // Manual Sync (Jira + GitHub)
     const handleSync = async () => {
-        if (!groupId) return;
+        if (!groupId) { toast.warning('Bạn chưa thuộc nhóm nào. Liên hệ Admin để được thêm vào nhóm.'); return; }
         setSyncing(true);
         try {
             await manualSyncApi(groupId);
             toast.success('Đồng bộ thành công!');
             fetchData();
             fetchCommits();
-        } catch {
-            toast.error('Đồng bộ thất bại');
+        } catch (err) {
+            toast.error(err?.response?.data?.message || 'Đồng bộ thất bại');
         } finally {
             setSyncing(false);
         }
@@ -147,14 +147,14 @@ export function LeaderReportsPage() {
 
     // Generate report action
     const handleGenerateReport = async () => {
-        if (!groupId) return;
+        if (!groupId) { toast.warning('Bạn chưa thuộc nhóm nào.'); return; }
         try {
             toast.info('Đang tạo báo cáo...');
             await generateReportApi(groupId);
             toast.success('Báo cáo đã được tạo thành công!');
             fetchData();
-        } catch {
-            toast.error('Không thể tạo báo cáo');
+        } catch (err) {
+            toast.error(err?.response?.data?.message || 'Không thể tạo báo cáo');
         }
     };
 

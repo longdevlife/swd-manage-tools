@@ -61,14 +61,14 @@ export function DashboardPage() {
 
   // Full sync: Jira + GitHub
   const handleFullSync = async () => {
-    if (!groupId) return;
+    if (!groupId) { toast.warning('Bạn chưa thuộc nhóm nào. Liên hệ Admin để được thêm vào nhóm.'); return; }
     setSyncing(true);
     try {
       await manualSyncApi(groupId);
       toast.success('Đồng bộ dữ liệu thành công!');
       fetchDashboard();
-    } catch {
-      toast.error('Đồng bộ thất bại');
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Đồng bộ thất bại');
     } finally {
       setSyncing(false);
     }

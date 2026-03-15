@@ -1,22 +1,16 @@
 import { useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import {
   BarChart3,
-  BookOpen,
-  Calendar,
   Circle,
   ClipboardList,
-  FileText,
   Github,
   GraduationCap,
-  HelpCircle,
   LayoutDashboard,
   ListTodo,
-  Mail,
   Settings,
   User,
-  Users,
   ArrowLeft,
   ShieldCheck,
   ChevronRight,
@@ -27,62 +21,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { selectUserRole } from '@/stores/authSlice';
 
-const mainNavSections = [
-  {
-    title: 'APPS & PAGES',
-    items: [
-      { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-      { to: '/tasks', icon: ListTodo, label: 'Tasks' },
-      {
-        to: '', // Base path for active matching
-        icon: Users,
-        label: 'Members',
-        subItems: [
-          { to: '/my-tasks', label: 'My Tasks' },
-          { to: '/my-stats', label: 'My Statistics' },
-        ],
-      },
-      { to: '/messages', icon: Mail, label: 'Messages' },
-      { to: '/reports', icon: BarChart3, label: 'Reports' },
-      { to: '/documents', icon: FileText, label: 'Documents' },
-    ],
-  },
-  {
-    title: 'SETTINGS',
-    items: [
-      { to: '/profile', icon: User, label: 'My Profile' },
-      { to: '/help', icon: HelpCircle, label: 'Help' },
-    ],
-  },
-];
-
-const lectureNavSections = [
-  {
-    title: 'LECTURE MANAGEMENT',
-    items: [
-      { to: '/lecture', icon: GraduationCap, label: 'Lecturer Console', end: true },
-      { to: '/lecture/github', icon: Github, label: 'GitHub Connector' },
-      { to: '/lecture/settings', icon: Settings, label: 'Settings' },
-    ],
-  },
-];
-
-const leaderNavSections = [
-  {
-    title: 'LEADER MANAGEMENT',
-    items: [
-      { to: '/leader/tasks', icon: ClipboardList, label: 'Task Management' },
-      { to: '/leader/reports', icon: BarChart3, label: 'Reports' },
-      { to: '/lecture/settings', icon: Settings, label: 'Config Jira/GitHub' },
-    ],
-  },
-];
+// ─── NavItem component ──────────────────────────────────────────────────────
 
 function NavItem({ item, isExpanded }) {
   const location = useLocation();
   const hasSubItems = Boolean(item.subItems && item.subItems.length > 0);
-
-  // Auto-expand if current route matches any child
   const isChildActive = hasSubItems && item.subItems.some((sub) => location.pathname === sub.to);
   const [isOpen, setIsOpen] = useState(isChildActive);
 
@@ -108,7 +51,6 @@ function NavItem({ item, isExpanded }) {
     );
   }
 
-  // Parent with Sub items
   return (
     <div className="flex flex-col gap-1">
       <button
@@ -132,8 +74,6 @@ function NavItem({ item, isExpanded }) {
           </div>
         )}
       </button>
-
-      {/* Sub Items */}
       {isOpen && isExpanded && (
         <div className="flex flex-col gap-1 mt-1 pl-8">
           {item.subItems.map((subItem) => (
@@ -161,62 +101,108 @@ function NavItem({ item, isExpanded }) {
   );
 }
 
+// ─── Sidebar component ──────────────────────────────────────────────────────
+
 export function Sidebar({ collapsed, onToggleCollapse }) {
   const [hovered, setHovered] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
   const userRole = useSelector(selectUserRole);
 
   const isExpanded = !collapsed || hovered;
   const isLectureRoute = location.pathname.startsWith('/lecture');
   const isLeaderRoute = location.pathname.startsWith('/leader');
+  const isSubSection = isLectureRoute || isLeaderRoute;
 
-  const baseNavSections = isLectureRoute
-    ? lectureNavSections
-    : isLeaderRoute
-      ? leaderNavSections
-      : mainNavSections;
-
-  // Normalize role: strip ROLE_ prefix for comparison
+  // Normalize role: strip ROLE_ prefix
   const normalizedRole = (userRole || '').replace(/^ROLE_/i, '');
 
-  // Append role-specific sections
-  const roleSections = [];
+  // ═══ Build navigation sections based on current route + role ═══
 
-  // Leader section for LEADER/ADMIN
-  if (['LEADER', 'ADMIN'].includes(normalizedRole) && !isLeaderRoute && !isLectureRoute) {
-    roleSections.push({
-      title: 'LEADER',
+  let navSections = [];
+
+  if (isLectureRoute) {
+    // ── Lecture sub-section sidebar ──
+    navSections = [
+      {
+        title: 'LECTURE MANAGEMENT',
+        items: [
+          { to: '/lecture', icon: GraduationCap, label: 'Lecturer Console', end: true },
+          { to: '/lecture/github', icon: Github, label: 'GitHub Connector' },
+          { to: '/lecture/settings', icon: Settings, label: 'Project Config' },
+        ],
+      },
+    ];
+  } else if (isLeaderRoute) {
+    // ── Leader sub-section sidebar ──
+    navSections = [
+      {
+        title: 'LEADER MANAGEMENT',
+        items: [
+          { to: '/leader/tasks', icon: ClipboardList, label: 'Task Management' },
+          { to: '/leader/reports', icon: BarChart3, label: 'Reports & Commits' },
+          { to: '/lecture/settings', icon: Settings, label: 'Config Jira/GitHub' },
+        ],
+      },
+    ];
+  } else {
+    // ── Main sidebar — show role-based sections ──
+
+    // Common section for all roles
+    navSections.push({
+      title: 'MAIN',
       items: [
-        { to: '/leader/tasks', icon: ClipboardList, label: 'Task Management' },
-        { to: '/leader/reports', icon: BarChart3, label: 'Reports' },
-        { to: '/lecture/settings', icon: Settings, label: 'Config Jira/GitHub' },
+        { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+        { to: '/tasks', icon: ListTodo, label: 'Tasks Board' },
+        { to: '/profile', icon: User, label: 'My Profile' },
       ],
     });
+
+    // Member section (for MEMBER, LEADER — anyone who is in a group)
+    if (['MEMBER', 'LEADER', 'ADMIN'].includes(normalizedRole)) {
+      navSections.push({
+        title: 'MEMBER',
+        items: [
+          { to: '/my-tasks', icon: ClipboardList, label: 'My Tasks' },
+          { to: '/my-stats', icon: BarChart3, label: 'My Statistics' },
+        ],
+      });
+    }
+
+    // Leader section
+    if (['LEADER', 'ADMIN'].includes(normalizedRole)) {
+      navSections.push({
+        title: 'LEADER',
+        items: [
+          { to: '/leader/tasks', icon: ClipboardList, label: 'Task Management' },
+          { to: '/leader/reports', icon: BarChart3, label: 'Reports' },
+          { to: '/lecture/settings', icon: Settings, label: 'Config Jira/GitHub' },
+        ],
+      });
+    }
+
+    // Lecturer section
+    if (['LECTURER', 'ADMIN'].includes(normalizedRole)) {
+      navSections.push({
+        title: 'LECTURER',
+        items: [
+          { to: '/lecture', icon: GraduationCap, label: 'Lecturer Console', end: true },
+          { to: '/lecture/github', icon: Github, label: 'GitHub Connector' },
+          { to: '/lecture/settings', icon: Settings, label: 'Settings' },
+        ],
+      });
+    }
+
+    // Admin section
+    if (normalizedRole === 'ADMIN') {
+      navSections.push({
+        title: 'ADMIN',
+        items: [
+          { to: '/admin', icon: ShieldCheck, label: 'Admin Panel' },
+        ],
+      });
+    }
   }
-
-  // Lecture section for LECTURER/ADMIN
-  if (['LECTURER', 'ADMIN'].includes(normalizedRole) && !isLectureRoute && !isLeaderRoute) {
-    roleSections.push({
-      title: 'LECTURE',
-      items: [
-        { to: '/lecture', icon: GraduationCap, label: 'Lecturer Console', end: true },
-        { to: '/lecture/github', icon: Github, label: 'GitHub Connector' },
-      ],
-    });
-  }
-
-  // Admin section for ADMIN only
-  const adminSection =
-    normalizedRole === 'ADMIN'
-      ? [
-        {
-          title: 'ADMIN',
-          items: [{ to: '/admin', icon: ShieldCheck, label: 'Admin Panel' }],
-        },
-      ]
-      : [];
-
-  const navSections = [...baseNavSections, ...roleSections, ...adminSection];
 
   return (
     <aside
@@ -228,7 +214,7 @@ export function Sidebar({ collapsed, onToggleCollapse }) {
         collapsed && hovered && 'shadow-xl',
       )}
     >
-      {/* Logo + Toggle — same horizontal padding as nav items */}
+      {/* Logo + Toggle */}
       <div
         className={cn(
           'flex h-16 items-center',
@@ -241,7 +227,6 @@ export function Sidebar({ collapsed, onToggleCollapse }) {
             isExpanded ? 'gap-3' : 'justify-center',
           )}
         >
-          {/* Logo icon — exactly 20px like nav icons, centered in same 40px hit area */}
           <div
             className={cn(
               'flex shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground',
@@ -272,6 +257,31 @@ export function Sidebar({ collapsed, onToggleCollapse }) {
         )}
       </div>
 
+      {/* ── Back Button (when in sub-section) ── */}
+      {isSubSection && isExpanded && (
+        <div className="px-3 pb-2">
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+          >
+            <ArrowLeft size={16} className="shrink-0" />
+            <span>Back to Main Menu</span>
+          </button>
+          <div className="mt-2 h-px bg-border" />
+        </div>
+      )}
+      {isSubSection && !isExpanded && (
+        <div className="flex justify-center pb-2">
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            title="Back to Main Menu"
+          >
+            <ArrowLeft size={18} />
+          </button>
+        </div>
+      )}
+
       {/* Navigation */}
       <ScrollArea className="flex-1 py-2">
         {navSections.map((section) => (
@@ -287,7 +297,7 @@ export function Sidebar({ collapsed, onToggleCollapse }) {
             )}
             <nav className="flex flex-col gap-1">
               {section.items.map((item, index) => (
-                <NavItem key={item.to || index} item={item} isExpanded={isExpanded} />
+                <NavItem key={item.to + item.label || index} item={item} isExpanded={isExpanded} />
               ))}
             </nav>
           </div>

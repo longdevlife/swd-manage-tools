@@ -248,14 +248,17 @@ export function LeaderTasksPage() {
 
     // Sync Jira issues
     const handleSyncJira = async () => {
-        if (!groupId) return;
+        if (!groupId) {
+            toast.warning('Bạn chưa thuộc nhóm nào. Liên hệ Admin để được thêm vào nhóm.');
+            return;
+        }
         setSyncing(true);
         try {
             await syncJiraIssuesApi(groupId);
             toast.success('Đồng bộ Jira thành công!');
             fetchData();
-        } catch {
-            toast.error('Đồng bộ Jira thất bại');
+        } catch (err) {
+            toast.error(err?.response?.data?.message || 'Đồng bộ Jira thất bại. Kiểm tra lại Jira Config.');
         } finally {
             setSyncing(false);
         }
@@ -263,7 +266,7 @@ export function LeaderTasksPage() {
 
     // Update issue status
     const handleStatusChange = async (issueId, newStatus) => {
-        if (!groupId) return;
+        if (!groupId) { toast.warning('Bạn chưa thuộc nhóm nào.'); return; }
         try {
             await updateIssueStatusApi(groupId, issueId, { status: newStatus });
             toast.success('Cập nhật trạng thái thành công!');

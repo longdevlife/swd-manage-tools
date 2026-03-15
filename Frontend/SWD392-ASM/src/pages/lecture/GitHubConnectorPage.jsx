@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { PageHeader } from '@/components/PageHeader';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,14 +8,52 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Github, GitBranch, GitCommit, Calendar, User, CheckCircle2, XCircle, RefreshCw, Link as LinkIcon, ExternalLink, Trash2 } from 'lucide-react';
+import { Github, GitBranch, GitCommit, Calendar, User as UserIcon, CheckCircle2, XCircle, RefreshCw, Link as LinkIcon, ExternalLink, Trash2 } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { selectCurrentUser } from '@/stores/authSlice';
 import { getGitHubConfigApi, getCommitsApi, syncCommitsApi, configureGitHubApi } from '@/features/github/api/githubApi';
 import { getGroupsApi } from '@/features/groups/api/groupsApi';
 import { toast } from 'sonner';
+import { Component } from 'react';
+
+// Error Boundary wrapper
+class GitHubErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-6">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <h2 className="text-red-800 font-bold">GitHub Connector Error</h2>
+            <pre className="text-sm text-red-600 mt-2 whitespace-pre-wrap">
+              {this.state.error?.message || 'Unknown error'}
+            </pre>
+            <pre className="text-xs text-red-400 mt-1 whitespace-pre-wrap">
+              {this.state.error?.stack}
+            </pre>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export function GitHubConnectorPage() {
+  return (
+    <GitHubErrorBoundary>
+      <GitHubConnectorPageInner />
+    </GitHubErrorBoundary>
+  );
+}
+
+function GitHubConnectorPageInner() {
   useSelector(selectCurrentUser);
   const [connectedRepos, setConnectedRepos] = useState([]);
   const [commits, setCommits] = useState([]);
@@ -25,60 +63,63 @@ export function GitHubConnectorPage() {
   const [isTokenSaved, setIsTokenSaved] = useState(false);
   const [syncingRepoId, setSyncingRepoId] = useState(null);
 
-  // Fetch data from APIs
-  const fetchData = useCallback(async () => {
-    try {
-      const groupsRes = await getGroupsApi().catch(() => ({ data: [] }));
-      const groupsList = Array.isArray(groupsRes?.data) ? groupsRes.data : Array.isArray(groupsRes) ? groupsRes : [];
-      const repos = [];
-      const allCommits = [];
-      for (const g of groupsList) {
-        const gid = g.group_id || g.id;
-        try {
-          const cfg = await getGitHubConfigApi(gid).catch(() => null);
-          if (cfg?.data || cfg) {
-            const config = cfg?.data || cfg;
-            repos.push({
-              id: gid,
-              studentName: g.group_name || g.name || `Group ${gid}`,
-              studentId: `GRP-${gid}`,
-              repoUrl: config.repo_url || config.repository || '',
-              repoName: (config.repo_url || config.repository || '').split('/').pop() || '',
-              status: config.repo_url ? 'connected' : 'error',
-              lastSync: config.last_synced_at || config.updated_at || '',
-              totalCommits: 0,
-              branch: config.branch || 'main',
+  useEffect(() => {
+    let cancelled = false;
+    const loadData = async () => {
+      try {
+        const groupsRes = await getGroupsApi().catch(() => ({ data: [] }));
+        const groupsList = Array.isArray(groupsRes?.data) ? groupsRes.data : Array.isArray(groupsRes) ? groupsRes : [];
+        const repos = [];
+        const allCommits = [];
+        for (const g of groupsList) {
+          const gid = g.group_id || g.id;
+          try {
+            const cfg = await getGitHubConfigApi(gid).catch(() => null);
+            if (cfg?.data || cfg) {
+              const config = cfg?.data || cfg;
+              repos.push({
+                id: gid,
+                studentName: g.group_name || g.name || `Group ${gid}`,
+                studentId: `GRP-${gid}`,
+                repoUrl: config.repo_url || config.repository || '',
+                repoName: (config.repo_url || config.repository || '').split('/').pop() || '',
+                status: config.repo_url ? 'connected' : 'error',
+                lastSync: config.last_synced_at || config.updated_at || '',
+                totalCommits: 0,
+                branch: config.branch || 'main',
+              });
+            }
+          } catch { /* skip */ }
+          try {
+            const commitsRes = await getCommitsApi(gid).catch(() => ({ data: [] }));
+            const cList = Array.isArray(commitsRes?.data) ? commitsRes.data : Array.isArray(commitsRes) ? commitsRes : [];
+            cList.forEach((c) => {
+              allCommits.push({
+                id: c.id || c.commit_sha || `${gid}-${allCommits.length}`,
+                studentName: g.group_name || g.name || '',
+                studentId: `GRP-${gid}`,
+                message: c.message || c.commit_message || '',
+                author: c.author_name || (typeof c.author === 'object' ? (c.author?.full_name || c.author?.github_username || c.author?.email) : c.author) || '',
+                date: c.committed_at || c.created_at || '',
+                sha: (c.sha || c.commit_sha || '').slice(0, 7),
+                branch: c.branch || 'main',
+                additions: c.additions || 0,
+                deletions: c.deletions || 0,
+              });
             });
-          }
-        } catch { /* skip */ }
-        try {
-          const commitsRes = await getCommitsApi(gid).catch(() => ({ data: [] }));
-          const cList = Array.isArray(commitsRes?.data) ? commitsRes.data : Array.isArray(commitsRes) ? commitsRes : [];
-          cList.forEach((c) => {
-            allCommits.push({
-              id: c.id || c.commit_sha,
-              studentName: g.group_name || g.name || '',
-              studentId: `GRP-${gid}`,
-              message: c.message || c.commit_message || '',
-              author: c.author_name || c.author || '',
-              date: c.committed_at || c.created_at || '',
-              sha: (c.sha || c.commit_sha || '').slice(0, 7),
-              branch: c.branch || 'main',
-              additions: c.additions || 0,
-              deletions: c.deletions || 0,
-            });
-          });
-          // Update repo commit count
-          const r = repos.find((r) => r.id === gid);
-          if (r) r.totalCommits = cList.length;
-        } catch { /* skip */ }
-      }
-      setConnectedRepos(repos);
-      setCommits(allCommits);
-    } catch { /* empty */ }
+            const r = repos.find((r) => r.id === gid);
+            if (r) r.totalCommits = cList.length;
+          } catch { /* skip */ }
+        }
+        if (!cancelled) {
+          setConnectedRepos(repos);
+          setCommits(allCommits);
+        }
+      } catch { /* empty */ }
+    };
+    loadData();
+    return () => { cancelled = true; };
   }, []);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
 
   // New repo form state
   const [newRepo, setNewRepo] = useState({
@@ -126,7 +167,7 @@ export function GitHubConnectorPage() {
           studentName: connectedRepos.find(r => r.id === repoId)?.studentName || '',
           studentId: `GRP-${repoId}`,
           message: c.message || c.commit_message || '',
-          author: c.author_name || c.author || '',
+          author: c.author_name || (typeof c.author === 'object' ? (c.author?.full_name || c.author?.github_username || c.author?.email) : c.author) || '',
           date: c.committed_at || c.created_at || '',
           sha: (c.sha || c.commit_sha || '').slice(0, 7),
           branch: c.branch || 'main',
@@ -190,7 +231,7 @@ export function GitHubConnectorPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Github size={20} />
-                GitHub Personal Access Token
+            GitHub Personal Access Token
           </CardTitle>
           <CardDescription>
             Enter your GitHub Personal Access Token to enable repository synchronization and commit tracking
@@ -207,15 +248,15 @@ export function GitHubConnectorPage() {
                 value={githubToken}
                 onChange={(e) => setGithubToken(e.target.value)}
               />
-              <p className="text-xs text-muted-foreground">
-                Create token at: Settings → Developer settings → Personal access tokens → Tokens (classic)
-              </p>
             </div>
-            <Button onClick={handleSaveToken} className="gap-2">
+            <Button onClick={handleSaveToken} className="gap-2 shrink-0">
               {isTokenSaved ? <CheckCircle2 size={16} /> : <Github size={16} />}
               {isTokenSaved ? 'Saved' : 'Save Token'}
             </Button>
           </div>
+          <p className="text-xs text-muted-foreground">
+            Create token at: Settings → Developer settings → Personal access tokens → Tokens (classic)
+          </p>
           {isTokenSaved && (
             <div className="flex items-center gap-2 text-sm text-green-600">
               <CheckCircle2 size={16} />
@@ -415,10 +456,10 @@ export function GitHubConnectorPage() {
                     <TableCell>
                       <div className="max-w-md">
                         <p className="font-medium truncate">{commit.message}</p>
-                        <p className="text-sm text-muted-foreground flex items-center gap-1">
-                          <User size={12} />
+                        <span className="text-sm text-muted-foreground flex items-center gap-1">
+                          <UserIcon size={12} />
                           {commit.author}
-                        </p>
+                        </span>
                       </div>
                     </TableCell>
                     <TableCell>

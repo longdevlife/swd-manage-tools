@@ -156,27 +156,27 @@ export function MemberTasksPage() {
 
   // Update task status
   const handleStatusChange = async (issueId, newStatus) => {
-    if (!groupId) return;
+    if (!groupId) { toast.warning('Bạn chưa thuộc nhóm nào.'); return; }
     try {
       await updateIssueStatusApi(groupId, issueId, { status: newStatus });
       toast.success('Cập nhật trạng thái thành công!');
       fetchTasks();
-    } catch {
-      toast.error('Cập nhật trạng thái thất bại');
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Cập nhật trạng thái thất bại');
     }
   };
 
   // Sync from Jira
   const [syncing, setSyncing] = useState(false);
   const handleSync = async () => {
-    if (!groupId) return;
+    if (!groupId) { toast.warning('Bạn chưa thuộc nhóm nào. Liên hệ Admin để được thêm vào nhóm.'); return; }
     setSyncing(true);
     try {
       await syncJiraIssuesApi(groupId);
       toast.success('Đồng bộ Jira thành công!');
       fetchTasks();
-    } catch {
-      toast.error('Đồng bộ thất bại');
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Đồng bộ thất bại');
     } finally {
       setSyncing(false);
     }
