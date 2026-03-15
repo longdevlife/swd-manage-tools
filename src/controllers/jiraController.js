@@ -95,6 +95,14 @@ const syncIssuesToDatabase = async (groupId) => {
   };
 };
 
+const mapIssueResponse = (issue) => ({
+  ...issue,
+  issue_id: issue.jira_issue_id,
+  jiraIssueId: issue.jira_issue_id,
+  issueKey: issue.issue_key,
+  assigneeEmail: issue.assignee_email,
+});
+
 // ═══════════════════════════════════════════════════
 // 1. JIRA PROJECT CONFIG
 // ═══════════════════════════════════════════════════
@@ -292,14 +300,14 @@ export const getIssues = async (req, res, next) => {
       return res.status(200).json({
         success: true,
         count: refreshedIssues.length,
-        data: refreshedIssues,
+        data: refreshedIssues.map(mapIssueResponse),
       });
     }
 
     res.status(200).json({
       success: true,
       count: issues.length,
-      data: issues,
+      data: issues.map(mapIssueResponse),
     });
   } catch (error) {
     next(error);

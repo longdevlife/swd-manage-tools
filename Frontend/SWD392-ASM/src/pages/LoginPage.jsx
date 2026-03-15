@@ -7,8 +7,14 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { loginApi, registerApi, getGoogleLoginUrl } from '@/features/auth/api/authApi';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { getGoogleLoginUrl, getMeApi, loginApi, registerApi } from '@/features/auth/api/authApi';
 import { setCredentials } from '@/stores/authSlice';
 
 const ROLE_OPTIONS = [
@@ -16,6 +22,30 @@ const ROLE_OPTIONS = [
   { value: 'LEADER', label: 'Leader (Trưởng nhóm)' },
   { value: 'LECTURER', label: 'Lecturer (Giảng viên)' },
 ];
+
+const normalizeUserProfile = (rawUser, fallbackRole = 'MEMBER') => {
+  const roles =
+    rawUser?.roles || rawUser?.user_roles?.map((ur) => ur?.role?.role_name).filter(Boolean) || [];
+
+  const normalizedGroups =
+    rawUser?.groups ||
+    rawUser?.group_memberships
+      ?.map((membership) => ({
+        group_id: membership?.group_id || membership?.student_group?.group_id,
+        group_name: membership?.student_group?.group_name,
+        semester: membership?.student_group?.semester,
+        project_title: membership?.student_group?.project_title,
+      }))
+      .filter((group) => group?.group_id) ||
+    [];
+
+  return {
+    ...rawUser,
+    groups: normalizedGroups,
+    roles,
+    role: roles[0] || fallbackRole,
+  };
+};
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -49,11 +79,20 @@ export function LoginPage() {
     try {
       const res = await loginApi({ email, password });
       const data = res?.data || res;
-      const rawUser = data.data?.user || data.user;
       const token = data.data?.token || data.token;
-      // Normalize: ensure both 'role' (string) and 'roles' (array) exist
-      const roles = rawUser?.roles || [];
-      const userObj = { ...rawUser, roles, role: roles[0] || 'MEMBER' };
+
+      // Store token first so /auth/me can be authorized by interceptor.
+      localStorage.setItem('accessToken', token);
+
+      let profileUser = data.data?.user || data.user;
+      try {
+        const meRes = await getMeApi();
+        profileUser = meRes?.data?.user || meRes?.user || profileUser;
+      } catch {
+        // Keep login payload user as fallback when /auth/me fails.
+      }
+
+      const userObj = normalizeUserProfile(profileUser, 'MEMBER');
       dispatch(setCredentials({ user: userObj, token }));
       toast.success('Đăng nhập thành công!');
       navigate('/dashboard');
@@ -73,13 +112,17 @@ export function LoginPage() {
     }
     setIsLoading(true);
     try {
-      const res = await registerApi({ full_name: fullName, email, password, role_name: roleName, github_username: githubUsername || undefined });
+      const res = await registerApi({
+        full_name: fullName,
+        email,
+        password,
+        role_name: roleName,
+        github_username: githubUsername || undefined,
+      });
       const data = res?.data || res;
       const rawUser = data.data?.user || data.user;
       const token = data.data?.token || data.token;
-      // Normalize: ensure both 'role' (string) and 'roles' (array) exist
-      const roles = rawUser?.roles || [];
-      const userObj = { ...rawUser, roles, role: roles[0] || roleName || 'MEMBER' };
+      const userObj = normalizeUserProfile(rawUser, roleName || 'MEMBER');
       dispatch(setCredentials({ user: userObj, token }));
       toast.success('Đăng ký thành công!');
       navigate('/dashboard');
@@ -187,7 +230,9 @@ export function LoginPage() {
         {/* Register: GitHub username */}
         {mode === 'register' && (
           <div className="grid gap-2">
-            <Label htmlFor="github">GitHub Username <span className="text-muted-foreground">(optional)</span></Label>
+            <Label htmlFor="github">
+              GitHub Username <span className="text-muted-foreground">(optional)</span>
+            </Label>
             <Input
               id="github"
               placeholder="your-github-username"

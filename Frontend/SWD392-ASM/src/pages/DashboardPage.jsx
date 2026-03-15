@@ -43,8 +43,14 @@ const STATUS_BADGE = {
 export function DashboardPage() {
   const user = useSelector(selectCurrentUser);
   const activeGroupId = useSelector((state) => state.ui?.activeGroupId);
-  const groupId = activeGroupId || user?.groups?.[0]?.group_id;
+  const groupIdFromUser =
+    activeGroupId ||
+    user?.groups?.[0]?.group_id ||
+    user?.group_memberships?.[0]?.group_id ||
+    user?.group_memberships?.[0]?.student_group?.group_id ||
+    user?.group_leaderships?.[0]?.group_id;
   const role = user?.role?.toLowerCase() || 'member';
+  const [groupId, setGroupId] = useState(groupIdFromUser ? Number(groupIdFromUser) : null);
 
   const [stats, setStats] = useState({
     totalTasks: 0,
@@ -59,9 +65,42 @@ export function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolveGroup = async () => {
+      if (role === 'admin') {
+        if (!cancelled) setGroupId(null);
+        return;
+      }
+
+      if (groupIdFromUser) {
+        if (!cancelled) setGroupId(Number(groupIdFromUser));
+        return;
+      }
+
+      try {
+        const res = await getGroupsApi();
+        const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+        const firstGroupId = list?.[0]?.group_id || list?.[0]?.id || null;
+        if (!cancelled) setGroupId(firstGroupId ? Number(firstGroupId) : null);
+      } catch {
+        if (!cancelled) setGroupId(null);
+      }
+    };
+
+    resolveGroup();
+    return () => {
+      cancelled = true;
+    };
+  }, [groupIdFromUser, role]);
+
   // Full sync: Jira + GitHub
   const handleFullSync = async () => {
-    if (!groupId) { toast.warning('Bạn chưa thuộc nhóm nào. Liên hệ Admin để được thêm vào nhóm.'); return; }
+    if (!groupId) {
+      toast.warning('Bạn chưa thuộc nhóm nào. Liên hệ Admin để được thêm vào nhóm.');
+      return;
+    }
     setSyncing(true);
     try {
       await manualSyncApi(groupId);
@@ -140,6 +179,27 @@ export function DashboardPage() {
           _status: STATUS_MAP[i.status] || 'todo',
         }));
 
+        const getCommitAuthorDisplay = (commit) => {
+          if (typeof commit?.author_name === 'string' && commit.author_name.trim()) {
+            return commit.author_name;
+          }
+
+          if (typeof commit?.author === 'string' && commit.author.trim()) {
+            return commit.author;
+          }
+
+          if (commit?.author && typeof commit.author === 'object') {
+            return (
+              commit.author.full_name ||
+              commit.author.email ||
+              commit.author.github_username ||
+              'Unknown'
+            );
+          }
+
+          return 'Unknown';
+        };
+
         setStats({
           totalTasks: mapped.length,
           inProgress: mapped.filter((t) => t._status === 'in_progress').length,
@@ -163,7 +223,7 @@ export function DashboardPage() {
         setRecentCommits(
           commits.slice(0, 5).map((c) => ({
             message: c.message || c.commit_message || '',
-            author: c.author_name || c.author || '',
+            author: getCommitAuthorDisplay(c),
             date: c.committed_at || c.created_at || '',
           })),
         );
@@ -329,9 +389,7 @@ export function DashboardPage() {
               Team Activity
             </CardTitle>
             {recentCommits.length > 0 && (
-              <span className="text-xs text-muted-foreground">
-                {stats.commits} total commits
-              </span>
+              <span className="text-xs text-muted-foreground">{stats.commits} total commits</span>
             )}
           </CardHeader>
           <CardContent>
@@ -341,9 +399,7 @@ export function DashboardPage() {
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <GitCommitHorizontal className="mb-2 h-8 w-8 text-muted-foreground/40" />
                 <p className="text-sm text-muted-foreground">
-                  {role === 'admin'
-                    ? 'Admin view — no commit data'
-                    : 'No recent commits found'}
+                  {role === 'admin' ? 'Admin view — no commit data' : 'No recent commits found'}
                 </p>
               </div>
             ) : (
@@ -355,8 +411,7 @@ export function DashboardPage() {
                       <p className="truncate text-sm font-medium">{commit.message}</p>
                       <p className="text-xs text-muted-foreground">
                         {commit.author}
-                        {commit.date &&
-                          ` · ${new Date(commit.date).toLocaleDateString('vi-VN')}`}
+                        {commit.date && ` · ${new Date(commit.date).toLocaleDateString('vi-VN')}`}
                       </p>
                     </div>
                   </div>

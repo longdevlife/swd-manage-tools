@@ -66,7 +66,7 @@ import {
   syncJiraIssuesApi,
   updateIssueStatusApi,
 } from '@/features/jira/api/jiraApi';
-import { getMembersApi } from '@/features/groups/api/groupsApi';
+import { getGroupsApi, getMembersApi } from '@/features/groups/api/groupsApi';
 
 // ─── Data Mapping ─────────────────────────────────────────────────────────────
 // Map backend Jira status → UI status key
@@ -77,6 +77,12 @@ const STATUS_MAP = {
   Done: 'done',
   Closed: 'done',
   Resolved: 'done',
+};
+const UI_TO_JIRA_STATUS = {
+  todo: 'To Do',
+  in_progress: 'In Progress',
+  in_review: 'In Review',
+  done: 'Done',
 };
 // Map backend priority → UI priority key
 const PRIORITY_MAP = {
@@ -195,6 +201,12 @@ function AvatarCircle({ name, size = 'sm' }) {
 export function LeaderTasksPage() {
   const user = useSelector(selectCurrentUser);
   const activeGroupId = useSelector((state) => state.ui?.activeGroupId);
+  const groupIdFromUser =
+    activeGroupId ||
+    user?.groups?.[0]?.group_id ||
+    user?.group_memberships?.[0]?.group_id ||
+    user?.group_memberships?.[0]?.student_group?.group_id ||
+    user?.group_leaderships?.[0]?.group_id;
 
   const [tasks, setTasks] = useState([]);
   const [members, setMembers] = useState([]);
@@ -218,9 +230,32 @@ export function LeaderTasksPage() {
     assigneeId: '',
     storyPoints: 1,
   });
+  const [groupId, setGroupId] = useState(groupIdFromUser ? Number(groupIdFromUser) : null);
 
-  // Lấy groupId từ Redux hoặc user's groups
-  const groupId = activeGroupId || user?.groups?.[0]?.group_id;
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolveGroup = async () => {
+      if (groupIdFromUser) {
+        if (!cancelled) setGroupId(Number(groupIdFromUser));
+        return;
+      }
+
+      try {
+        const res = await getGroupsApi();
+        const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+        const firstGroupId = list?.[0]?.group_id || list?.[0]?.id || null;
+        if (!cancelled) setGroupId(firstGroupId ? Number(firstGroupId) : null);
+      } catch {
+        if (!cancelled) setGroupId(null);
+      }
+    };
+
+    resolveGroup();
+    return () => {
+      cancelled = true;
+    };
+  }, [groupIdFromUser]);
 
   // Fetch data từ API
   const fetchData = useCallback(async () => {
@@ -239,25 +274,29 @@ export function LeaderTasksPage() {
         : Array.isArray(membersRes)
           ? membersRes
           : [];
-      const issuesList = Array.isArray(issuesRes?.data)
-        ? issuesRes.data
-        : Array.isArray(issuesRes)
-          ? issuesRes
-          : [];
-      setMembers(
-        membersList.map((m) => ({
-          id: m.user_id || m.id,
-          name: m.full_name || m.name || m.email,
-          email: m.email,
-          avatar: (m.full_name || m.name || '?')
+      const normalizedMembers = membersList.map((m) => {
+        const userProfile = m.user || m;
+        const displayName = userProfile.full_name || userProfile.name || userProfile.email || '?';
+
+        return {
+          id: userProfile.user_id || m.user_id || userProfile.id || m.id,
+          name: displayName,
+          email: userProfile.email || m.email,
+          avatar: displayName
             .split(' ')
             .map((w) => w[0])
             .join('')
             .slice(0, 2)
             .toUpperCase(),
-        })),
-      );
-      setTasks(issuesList.map((issue) => mapIssue(issue, membersList)));
+        };
+      });
+      const issuesList = Array.isArray(issuesRes?.data)
+        ? issuesRes.data
+        : Array.isArray(issuesRes)
+          ? issuesRes
+          : [];
+      setMembers(normalizedMembers);
+      setTasks(issuesList.map((issue) => mapIssue(issue, normalizedMembers)));
     } catch {
       toast.error('Không thể tải dữ liệu');
     } finally {
@@ -293,14 +332,16 @@ export function LeaderTasksPage() {
   const handleStatusChange = async (issueId, newStatus) => {
     if (!groupId) {
       toast.warning('Bạn chưa thuộc nhóm nào.');
-      return;
+      return false;
     }
     try {
       await updateIssueStatusApi(groupId, issueId, { status: newStatus });
       toast.success('Cập nhật trạng thái thành công!');
-      fetchData();
+      await fetchData();
+      return true;
     } catch {
       toast.error('Cập nhật trạng thái thất bại');
+      return false;
     }
   };
 
@@ -310,7 +351,9 @@ export function LeaderTasksPage() {
     if (priorityFilter !== 'all' && task.priority !== priorityFilter) return false;
     if (assigneeFilter !== 'all') {
       if (assigneeFilter === 'unassigned' && task.assignee) return false;
-      if (assigneeFilter !== 'unassigned' && task.assignee?.id !== assigneeFilter) return false;
+      if (assigneeFilter !== 'unassigned' && String(task.assignee?.id) !== String(assigneeFilter)) {
+        return false;
+      }
     }
     if (searchQuery && !task.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;
@@ -340,7 +383,7 @@ export function LeaderTasksPage() {
       icon: CheckCircle2,
       color: 'text-[var(--success)]',
       bgColor: 'bg-[var(--success)]/10',
-      subtext: `${Math.round((tasks.filter((t) => t.status === 'done').length / tasks.length) * 100)}% completion`,
+      subtext: `${tasks.length > 0 ? Math.round((tasks.filter((t) => t.status === 'done').length / tasks.length) * 100) : 0}% completion`,
     },
     {
       title: 'Overdue',
@@ -359,7 +402,11 @@ export function LeaderTasksPage() {
       toast.error('Task này chưa đồng bộ Jira đầy đủ. Vui lòng sync lại.');
       return;
     }
-    const member = members.find((m) => m.id === memberId);
+    const member = members.find((m) => String(m.id) === String(memberId));
+    if (!member) {
+      toast.error('Không tìm thấy thành viên để giao task');
+      return;
+    }
     setAssigning(true);
     try {
       await assignIssueApi(groupId, assignTarget.jiraIssueId, { user_id: memberId });
@@ -374,6 +421,22 @@ export function LeaderTasksPage() {
     } finally {
       setAssigning(false);
     }
+  };
+
+  const handleUpdateSelectedTaskStatus = async (uiStatus) => {
+    if (!selectedTask) return;
+
+    const jiraStatus = UI_TO_JIRA_STATUS[uiStatus];
+    if (!jiraStatus) return;
+
+    const issueRef = selectedTask.jiraIssueId || selectedTask.id;
+    const updated = await handleStatusChange(issueRef, jiraStatus);
+    if (!updated) return;
+
+    setSelectedTask((prev) => (prev ? { ...prev, status: uiStatus } : prev));
+    setTasks((prev) =>
+      prev.map((task) => (task.id === selectedTask.id ? { ...task, status: uiStatus } : task)),
+    );
   };
 
   // Create task handler
@@ -706,6 +769,21 @@ export function LeaderTasksPage() {
                 </Badge>
               </div>
 
+              <div className="space-y-2">
+                <span className="text-sm font-semibold">Update Status</span>
+                <Select value={selectedTask.status} onValueChange={handleUpdateSelectedTaskStatus}>
+                  <SelectTrigger className="w-52">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todo">To Do</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="in_review">In Review</SelectItem>
+                    <SelectItem value="done">Done</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               {/* Assignee */}
               <div className="flex items-center gap-3">
                 <span className="text-sm font-semibold">Assignee:</span>
@@ -895,7 +973,7 @@ export function LeaderTasksPage() {
                   <SelectContent>
                     <SelectItem value="none">Unassigned</SelectItem>
                     {members.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
+                      <SelectItem key={m.id} value={String(m.id)}>
                         {m.name}
                       </SelectItem>
                     ))}

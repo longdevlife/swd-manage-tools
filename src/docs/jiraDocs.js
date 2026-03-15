@@ -152,8 +152,10 @@
  *         name: issueId
  *         required: true
  *         schema:
- *           type: integer
- *         description: "jira_issue_id trong DB noi bo (khong phai Jira key)"
+ *           oneOf:
+ *             - type: integer
+ *             - type: string
+ *         description: "Ho tro ca jira_issue_id noi bo hoac Jira issue key (VD: SWD-12)"
  *     requestBody:
  *       required: true
  *       content:
@@ -195,8 +197,10 @@
  *         name: issueId
  *         required: true
  *         schema:
- *           type: integer
- *         description: "jira_issue_id trong DB noi bo"
+ *           oneOf:
+ *             - type: integer
+ *             - type: string
+ *         description: "Ho tro ca jira_issue_id noi bo hoac Jira issue key (VD: SWD-12)"
  *     requestBody:
  *       required: true
  *       content:
