@@ -8,3 +8,6 @@ export const getUsersApi = (params) =>
 
 export const getUserByIdApi = (userId) =>
   axiosClient.get(API_ENDPOINTS.USERS.DETAIL(userId));
+
+export const updateUserProfileApi = (userId, data) =>
+  axiosClient.put(API_ENDPOINTS.USERS.DETAIL(userId), data);

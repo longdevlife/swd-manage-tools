@@ -1,12 +1,10 @@
-import { useNavigate } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { getGoogleLoginUrl } from '@/features/auth/api/authApi';
 
 export function LoginPage() {
-  const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
 
   const handleGoogleLogin = () => {
@@ -15,23 +13,25 @@ export function LoginPage() {
   };
 
   return (
-    <div>
-      <h2 className="text-2xl font-bold">Đăng nhập</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Sử dụng tài khoản Google để đăng nhập vào hệ thống
-      </p>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col items-center gap-2 text-center">
+        <h1 className="text-2xl font-bold">Welcome back</h1>
+        <p className="text-sm text-muted-foreground text-balance">
+          Sign in to your SWD392 account to continue
+        </p>
+      </div>
 
-      <div className="mt-8 space-y-4">
-        {/* Google Sign In Button */}
+      <div className="grid gap-4">
         <Button
-          className="w-full gap-3 h-12 text-base"
+          variant="outline"
+          className="w-full gap-3 h-10"
           onClick={handleGoogleLogin}
           disabled={isLoading}
         >
           {isLoading ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
+            <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
-            <svg className="h-5 w-5" viewBox="0 0 24 24">
+            <svg className="h-4 w-4" viewBox="0 0 24 24">
               <path
                 d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
                 fill="#4285F4"
@@ -50,11 +50,13 @@ export function LoginPage() {
               />
             </svg>
           )}
-          {isLoading ? 'Đang chuyển hướng...' : 'Đăng nhập bằng Google'}
+          {isLoading ? 'Redirecting...' : 'Sign in with Google'}
         </Button>
-
-
       </div>
+
+      <p className="text-center text-xs text-muted-foreground text-balance">
+        By signing in, you agree to our Terms of Service and Privacy Policy.
+      </p>
     </div>
   );
 }
