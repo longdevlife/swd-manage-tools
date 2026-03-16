@@ -68,7 +68,7 @@ export const getUserById = async (req, res, next) => {
         },
         group_memberships: {
           include: {
-            group: {
+            student_group: {
               select: { group_id: true, group_name: true },
             },
           },
