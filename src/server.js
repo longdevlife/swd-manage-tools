@@ -21,7 +21,10 @@ const app = express();
 // --------------- Global Middlewares ---------------
 
 app.use(cors({
-  origin: process.env.CLIENT_URL || "*",
+  origin: [
+    process.env.CLIENT_URL || "http://localhost:5173",
+    "https://swd-manage-tools.vercel.app",
+  ].filter(Boolean),
   credentials: true,
 }));
 
@@ -102,15 +105,18 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-  console.log(`\n🚀 Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
-  console.log(`📡 Health:   http://localhost:${PORT}/api/health`);
-  console.log(`📖 API Docs: http://localhost:${PORT}/api/docs`);
-  console.log(`📋 Raw Spec: http://localhost:${PORT}/api/docs/spec`);
-  console.log(`🗄️  Database: Neon PostgreSQL (Prisma v7)\n`);
+// Only listen when NOT running as Vercel serverless function
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`\n🚀 Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+    console.log(`📡 Health:   http://localhost:${PORT}/api/health`);
+    console.log(`📖 API Docs: http://localhost:${PORT}/api/docs`);
+    console.log(`📋 Raw Spec: http://localhost:${PORT}/api/docs/spec`);
+    console.log(`🗄️  Database: Neon PostgreSQL (Prisma v7)\n`);
 
-  // Khởi tạo Cron Jobs (Phase 10)
-  initCronJobs();
-});
+    // Khởi tạo Cron Jobs (Phase 10)
+    initCronJobs();
+  });
+}
 
 export default app;
