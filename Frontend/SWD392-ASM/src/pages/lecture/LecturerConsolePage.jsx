@@ -103,10 +103,11 @@ export function LecturerConsolePage() {
           const membersRes = await getMembersApi(g.group_id || g.id);
           const membersList = Array.isArray(membersRes?.data) ? membersRes.data : (Array.isArray(membersRes) ? membersRes : []);
           membersList.forEach((m) => {
+            const u = m.user || m; // API nests user data inside m.user
             allStudents.push({
-              id: m.user_id || m.id,
-              name: m.full_name || m.name || m.email,
-              email: m.email || '',
+              id: u.user_id || m.user_id || m.id,
+              name: u.full_name || u.name || u.email || 'Unknown',
+              email: u.email || m.email || '',
               groupId: g.group_id || g.id,
               groupName: g.group_name || g.name || `Group ${g.group_id}`,
               role: m.role || 'Member',
@@ -254,8 +255,8 @@ export function LecturerConsolePage() {
 
   // ── Filter students ──
   const filteredStudents = students.filter((s) => {
-    const matchSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.email.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchSearch = (s.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (s.email || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchGroup = filterGroup === 'all' || s.groupId === parseInt(filterGroup);
     return matchSearch && matchGroup;
   });
@@ -403,7 +404,7 @@ export function LecturerConsolePage() {
                         <div className="flex items-center gap-3">
                           <Avatar className="h-8 w-8">
                             <AvatarFallback className="text-xs">
-                              {s.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
+                              {(s.name || '?').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
                             </AvatarFallback>
                           </Avatar>
                           <span className="font-medium">{s.name}</span>

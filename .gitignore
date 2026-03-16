@@ -1,12 +1,27 @@
+# Dependencies
 node_modules/
+
+# Environment
 .env
-*.log
-dist/
-.DS_Store
-coverage/
+.env.local
+.env.*.local
+
+# Prisma generated client
 src/generated/
 
-# Bỏ qua các file tài liệu/MCP của AI để không commit lên Git
-PROJECT_KNOWLEDGE.md
-.agents/
-skills-lock.json
+# Vercel
+.vercel/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
+
