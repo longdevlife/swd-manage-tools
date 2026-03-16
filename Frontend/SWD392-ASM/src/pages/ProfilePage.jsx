@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { selectCurrentUser, setUser } from '@/stores/authSlice';
-import { authService } from '@/services/authService';
+import { updateUserProfileApi } from '@/features/users/api/usersApi';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -93,12 +93,13 @@ export function ProfilePage() {
 
         setIsLoading(true);
         try {
-            const updatedUser = await authService.updateProfile({
-                username: form.username.trim(),
+            const res = await updateUserProfileApi(currentUser.id || currentUser.user_id, {
+                full_name: form.username.trim(),
                 email: form.email.trim(),
                 phoneNumber: form.phoneNumber.trim() || undefined,
                 yob: form.yob ? Number(form.yob) : undefined,
             });
+            const updatedUser = res?.data || res;
             dispatch(setUser(updatedUser));
             setIsEditing(false);
             toast.success('Cập nhật hồ sơ thành công!');

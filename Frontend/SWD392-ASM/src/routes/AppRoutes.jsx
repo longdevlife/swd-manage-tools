@@ -29,8 +29,14 @@ export function AppRoutes() {
       {/* ── Google OAuth callback (full-screen, no layout) ── */}
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
 
-      {/* ── Main App Routes (MainLayout — sidebar + topnav) ── */}
-      <Route element={<MainLayout />}>
+      {/* ── Main App Routes (Protected — sidebar + topnav) ── */}
+      <Route
+        element={
+          <ProtectedRoute>
+            <MainLayout />
+          </ProtectedRoute>
+        }
+      >
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/tasks" element={<TasksPage />} />
 
@@ -54,16 +60,17 @@ export function AppRoutes() {
         <Route
           path="/admin"
           element={
-            // <ProtectedRoute role="ROLE_ADMIN">
-            <AdminPage />
-            // </ProtectedRoute>
+            <ProtectedRoute role="ROLE_ADMIN">
+              <AdminPage />
+            </ProtectedRoute>
           }
         />
       </Route>
 
       {/* Redirects & Fallback */}
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 }
+

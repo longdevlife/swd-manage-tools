@@ -5,11 +5,12 @@ import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { setCredentials } from '@/stores/authSlice';
-import { authService } from '@/services/authService';
+import { getMeApi, handleGoogleCallback } from '@/features/auth/api/authApi';
 
 /**
  * Trang xử lý redirect callback từ Google OAuth.
- * URL: /auth/callback?code=xxx hoặc /auth/callback?token=xxx&user=xxx
+ * URL: /auth/callback?token=xxx&email=xxx&role=xxx
+ * Hoặc: /auth/callback?code=xxx (code exchange flow)
  */
 export function AuthCallbackPage() {
     const navigate = useNavigate();
@@ -20,14 +21,33 @@ export function AuthCallbackPage() {
     useEffect(() => {
         const processCallback = async () => {
             try {
-                // Backend redirect về với token, email, role
+                // Trường hợp 1: Backend redirect về với token (qua Vite proxy)
                 const token = searchParams.get('token');
                 const email = searchParams.get('email');
                 const role = searchParams.get('role');
 
                 if (token) {
-                    const user = { email, role };
-                    dispatch(setCredentials({ user, token }));
+                    // Lưu token trước để getMeApi có thể dùng
+                    localStorage.setItem('accessToken', token);
+
+                    // Gọi /auth/me để lấy full profile
+                    try {
+                        const res = await getMeApi();
+                        // axiosClient interceptor strips .data → res = { success, data: { user } }
+                        const userData = res?.data?.user || res?.user || res;
+                        // Normalize role field
+                        const roles = userData?.user_roles?.map((ur) => ur.role?.role_name) || [];
+                        const userObj = {
+                            ...userData,
+                            role: role || roles[0] || 'MEMBER',
+                            roles,
+                        };
+                        dispatch(setCredentials({ user: userObj, token }));
+                    } catch {
+                        // Fallback: dùng basic info từ query params
+                        dispatch(setCredentials({ user: { email, role: role || 'MEMBER' }, token }));
+                    }
+
                     toast.success('Đăng nhập thành công!');
                     navigate('/dashboard', { replace: true });
                     return;
@@ -36,7 +56,7 @@ export function AuthCallbackPage() {
                 // Trường hợp 2: Google trả code, cần gọi backend để đổi token
                 const code = searchParams.get('code');
                 if (code) {
-                    const data = await authService.handleGoogleCallback(code);
+                    const data = await handleGoogleCallback(code);
                     dispatch(setCredentials({ user: data.user, token: data.token }));
                     toast.success('Đăng nhập thành công!');
                     navigate('/dashboard', { replace: true });

@@ -41,6 +41,11 @@ export const { setCredentials, setUser, logout } = authSlice.actions;
 export const selectCurrentUser = (state) => state.auth.user;
 export const selectCurrentToken = (state) => state.auth.token;
 export const selectIsAuthenticated = (state) => state.auth.isAuthenticated;
-export const selectUserRole = (state) => state.auth.user?.role ?? null;
+export const selectUserRole = (state) => {
+  const user = state.auth.user;
+  // Support both normalized 'role' string and original 'roles' array from BE
+  return user?.role ?? user?.roles?.[0] ?? null;
+};
+export const selectUserRoles = (state) => state.auth.user?.roles ?? [];
 
 export default authSlice.reducer;

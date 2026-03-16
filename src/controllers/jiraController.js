@@ -18,6 +18,91 @@ const getAdapter = async (groupId) => {
   return { adapter: new JiraAdapter(config.base_url, config.jira_email, decryptedToken), config };
 };
 
+const getGroupJiraConfig = async (groupId) => {
+  return prisma.jira_Project.findUnique({
+    where: { group_id: groupId },
+  });
+};
+
+const findIssueInGroup = async (groupId, issueRef) => {
+  const config = await getGroupJiraConfig(groupId);
+  if (!config) {
+    return null;
+  }
+
+  const numericIssueId = Number(issueRef);
+  if (Number.isInteger(numericIssueId) && String(numericIssueId) === String(issueRef)) {
+    const byId = await prisma.jira_Issue.findUnique({
+      where: { jira_issue_id: numericIssueId },
+    });
+    if (byId?.jira_project_id === config.jira_project_id) {
+      return byId;
+    }
+  }
+
+  return prisma.jira_Issue.findFirst({
+    where: {
+      jira_project_id: config.jira_project_id,
+      issue_key: issueRef,
+    },
+  });
+};
+
+const syncIssuesToDatabase = async (groupId) => {
+  const { adapter, config } = await getAdapter(groupId);
+
+  const jiraIssues = await adapter.getAllIssues(config.project_key);
+
+  let created = 0;
+  let updated = 0;
+
+  for (const issue of jiraIssues) {
+    const issueData = {
+      jira_project_id: config.jira_project_id,
+      issue_key: issue.key,
+      issue_type: issue.fields.issuetype?.name || "Task",
+      summary: issue.fields.summary || "",
+      status: issue.fields.status?.name || "To Do",
+      priority: issue.fields.priority?.name || null,
+      assignee_email: issue.fields.assignee?.emailAddress || null,
+      created_at: new Date(issue.fields.created),
+    };
+
+    const existing = await prisma.jira_Issue.findFirst({
+      where: {
+        jira_project_id: config.jira_project_id,
+        issue_key: issue.key,
+      },
+    });
+
+    if (existing) {
+      await prisma.jira_Issue.update({
+        where: { jira_issue_id: existing.jira_issue_id },
+        data: issueData,
+      });
+      updated++;
+    } else {
+      await prisma.jira_Issue.create({ data: issueData });
+      created++;
+    }
+  }
+
+  return {
+    config,
+    total_from_jira: jiraIssues.length,
+    created,
+    updated,
+  };
+};
+
+const mapIssueResponse = (issue) => ({
+  ...issue,
+  issue_id: issue.jira_issue_id,
+  jiraIssueId: issue.jira_issue_id,
+  issueKey: issue.issue_key,
+  assigneeEmail: issue.assignee_email,
+});
+
 // ═══════════════════════════════════════════════════
 // 1. JIRA PROJECT CONFIG
 // ═══════════════════════════════════════════════════
@@ -58,9 +143,38 @@ export const getJiraConfig = async (req, res, next) => {
 export const configureJira = async (req, res, next) => {
   try {
     const groupId = parseInt(req.params.groupId);
-    const { project_key, project_name, base_url, jira_email, jira_api_token } = req.body;
+    const {
+      project_key,
+      project_name,
+      base_url,
+      jira_email,
+      jira_api_token,
+      jira_base_url,
+      email,
+      api_token,
+    } = req.body;
 
-    if (!project_key || !base_url || !jira_email || !jira_api_token) {
+    const existingConfig = await prisma.jira_Project.findUnique({
+      where: { group_id: groupId },
+    });
+
+    const normalizedProjectKey = project_key;
+    const normalizedProjectName = project_name || project_key;
+    const normalizedBaseUrl = base_url || jira_base_url || existingConfig?.base_url;
+    const normalizedJiraEmail = jira_email || email || existingConfig?.jira_email;
+    const rawToken = jira_api_token || api_token;
+    const normalizedJiraToken = rawToken
+      ? rawToken
+      : existingConfig?.jira_api_token
+        ? decrypt(existingConfig.jira_api_token)
+        : null;
+
+    if (
+      !normalizedProjectKey ||
+      !normalizedBaseUrl ||
+      !normalizedJiraEmail ||
+      !normalizedJiraToken
+    ) {
       return res.status(400).json({
         success: false,
         message: "project_key, base_url, jira_email, and jira_api_token are required",
@@ -75,7 +189,7 @@ export const configureJira = async (req, res, next) => {
 
     // Test kết nối Jira trước khi lưu
     try {
-      const adapter = new JiraAdapter(base_url, jira_email, jira_api_token);
+      const adapter = new JiraAdapter(normalizedBaseUrl, normalizedJiraEmail, normalizedJiraToken);
       await adapter.testConnection();
     } catch {
       return res.status(400).json({
@@ -85,24 +199,24 @@ export const configureJira = async (req, res, next) => {
     }
 
     // Encrypt token trước khi lưu (BR-08)
-    const encryptedToken = encrypt(jira_api_token);
+    const encryptedToken = rawToken ? encrypt(rawToken) : existingConfig?.jira_api_token;
 
     // Upsert: nếu đã có config thì update, chưa thì create
     const config = await prisma.jira_Project.upsert({
       where: { group_id: groupId },
       update: {
-        project_key,
-        project_name: project_name || project_key,
-        base_url,
-        jira_email,
+        project_key: normalizedProjectKey,
+        project_name: normalizedProjectName,
+        base_url: normalizedBaseUrl,
+        jira_email: normalizedJiraEmail,
         jira_api_token: encryptedToken,
       },
       create: {
         group_id: groupId,
-        project_key,
-        project_name: project_name || project_key,
-        base_url,
-        jira_email,
+        project_key: normalizedProjectKey,
+        project_name: normalizedProjectName,
+        base_url: normalizedBaseUrl,
+        jira_email: normalizedJiraEmail,
         jira_api_token: encryptedToken,
       },
       select: {
@@ -133,53 +247,15 @@ export const configureJira = async (req, res, next) => {
 export const syncJiraIssues = async (req, res, next) => {
   try {
     const groupId = parseInt(req.params.groupId);
-    const { adapter, config } = await getAdapter(groupId);
-
-    // Kéo tất cả issues từ Jira
-    const jiraIssues = await adapter.getAllIssues(config.project_key);
-
-    let created = 0;
-    let updated = 0;
-
-    for (const issue of jiraIssues) {
-      const issueData = {
-        jira_project_id: config.jira_project_id,
-        issue_key: issue.key,
-        issue_type: issue.fields.issuetype?.name || "Task",
-        summary: issue.fields.summary || "",
-        status: issue.fields.status?.name || "To Do",
-        priority: issue.fields.priority?.name || null,
-        assignee_email: issue.fields.assignee?.emailAddress || null,
-        created_at: new Date(issue.fields.created),
-      };
-
-      // Upsert by issue_key + jira_project_id
-      const existing = await prisma.jira_Issue.findFirst({
-        where: {
-          jira_project_id: config.jira_project_id,
-          issue_key: issue.key,
-        },
-      });
-
-      if (existing) {
-        await prisma.jira_Issue.update({
-          where: { jira_issue_id: existing.jira_issue_id },
-          data: issueData,
-        });
-        updated++;
-      } else {
-        await prisma.jira_Issue.create({ data: issueData });
-        created++;
-      }
-    }
+    const syncResult = await syncIssuesToDatabase(groupId);
 
     res.status(200).json({
       success: true,
-      message: `Sync completed: ${created} created, ${updated} updated`,
+      message: `Sync completed: ${syncResult.created} created, ${syncResult.updated} updated`,
       data: {
-        total_from_jira: jiraIssues.length,
-        created,
-        updated,
+        total_from_jira: syncResult.total_from_jira,
+        created: syncResult.created,
+        updated: syncResult.updated,
       },
     });
   } catch (error) {
@@ -195,6 +271,7 @@ export const syncJiraIssues = async (req, res, next) => {
 export const getIssues = async (req, res, next) => {
   try {
     const groupId = parseInt(req.params.groupId);
+    const shouldAutoSync = req.query.auto_sync !== "false";
 
     const config = await prisma.jira_Project.findUnique({
       where: { group_id: groupId },
@@ -208,10 +285,29 @@ export const getIssues = async (req, res, next) => {
       orderBy: { created_at: "desc" },
     });
 
+    if (issues.length === 0 && shouldAutoSync) {
+      try {
+        await syncIssuesToDatabase(groupId);
+      } catch {
+        // Let FE still receive empty list so UI can continue to load.
+      }
+
+      const refreshedIssues = await prisma.jira_Issue.findMany({
+        where: { jira_project_id: config.jira_project_id },
+        orderBy: { created_at: "desc" },
+      });
+
+      return res.status(200).json({
+        success: true,
+        count: refreshedIssues.length,
+        data: refreshedIssues.map(mapIssueResponse),
+      });
+    }
+
     res.status(200).json({
       success: true,
       count: issues.length,
-      data: issues,
+      data: issues.map(mapIssueResponse),
     });
   } catch (error) {
     next(error);
@@ -222,7 +318,7 @@ export const getIssues = async (req, res, next) => {
 export const updateIssueStatus = async (req, res, next) => {
   try {
     const groupId = parseInt(req.params.groupId);
-    const issueId = parseInt(req.params.issueId);
+    const issueRef = req.params.issueId;
     const { status } = req.body;
 
     if (!status) {
@@ -230,9 +326,7 @@ export const updateIssueStatus = async (req, res, next) => {
     }
 
     // Tìm issue trong DB
-    const issue = await prisma.jira_Issue.findUnique({
-      where: { jira_issue_id: issueId },
-    });
+    const issue = await findIssueInGroup(groupId, issueRef);
     if (!issue) {
       return res.status(404).json({ success: false, message: "Issue not found" });
     }
@@ -250,7 +344,7 @@ export const updateIssueStatus = async (req, res, next) => {
 
     // Cập nhật DB nội bộ
     const updated = await prisma.jira_Issue.update({
-      where: { jira_issue_id: issueId },
+      where: { jira_issue_id: issue.jira_issue_id },
       data: { status },
     });
 
@@ -273,22 +367,40 @@ export const updateIssueStatus = async (req, res, next) => {
 export const assignIssue = async (req, res, next) => {
   try {
     const groupId = parseInt(req.params.groupId);
-    const issueId = parseInt(req.params.issueId);
-    const { user_id } = req.body;
+    const issueRef = req.params.issueId;
+    const userId = req.body.user_id ?? req.body.assignee_id;
+    const assigneeEmail = req.body.assignee_email;
 
-    if (!user_id) {
+    if (!userId && !assigneeEmail) {
       return res.status(400).json({ success: false, message: "user_id is required" });
     }
 
     // Kiểm tra user là member của nhóm
-    const member = await prisma.group_Member.findUnique({
-      where: {
-        group_id_user_id: { group_id: groupId, user_id: parseInt(user_id) },
-      },
-      include: {
-        user: { select: { user_id: true, full_name: true, email: true } },
-      },
-    });
+    let member;
+
+    if (userId) {
+      member = await prisma.group_Member.findUnique({
+        where: {
+          group_id_user_id: { group_id: groupId, user_id: parseInt(userId) },
+        },
+        include: {
+          user: { select: { user_id: true, full_name: true, email: true } },
+        },
+      });
+    } else {
+      member = await prisma.group_Member.findFirst({
+        where: {
+          group_id: groupId,
+          user: {
+            email: assigneeEmail,
+          },
+        },
+        include: {
+          user: { select: { user_id: true, full_name: true, email: true } },
+        },
+      });
+    }
+
     if (!member) {
       return res.status(400).json({
         success: false,
@@ -297,9 +409,7 @@ export const assignIssue = async (req, res, next) => {
     }
 
     // Tìm issue trong DB
-    const issue = await prisma.jira_Issue.findUnique({
-      where: { jira_issue_id: issueId },
-    });
+    const issue = await findIssueInGroup(groupId, issueRef);
     if (!issue) {
       return res.status(404).json({ success: false, message: "Issue not found" });
     }
@@ -315,7 +425,7 @@ export const assignIssue = async (req, res, next) => {
 
     // Bước 2: Lưu assignee vào DB nội bộ
     const updated = await prisma.jira_Issue.update({
-      where: { jira_issue_id: issueId },
+      where: { jira_issue_id: issue.jira_issue_id },
       data: { assignee_email: member.user.email },
     });
 
@@ -331,4 +441,3 @@ export const assignIssue = async (req, res, next) => {
     next(error);
   }
 };
-

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   ListTodo,
   Clock,
@@ -13,7 +13,10 @@ import {
   Timer,
   CircleCheck,
   CirclePause,
+  RefreshCw,
 } from 'lucide-react';
+import { useSelector } from 'react-redux';
+import { toast } from 'sonner';
 
 import { PageHeader } from '@/components/PageHeader';
 import { Badge } from '@/components/ui/badge';
@@ -37,133 +40,51 @@ import {
 } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
+import {
+  getJiraIssuesApi,
+  updateIssueStatusApi,
+  syncJiraIssuesApi,
+} from '@/features/jira/api/jiraApi';
+import { getGroupsApi } from '@/features/groups/api/groupsApi';
+import { selectCurrentUser } from '@/stores/authSlice';
 
-// ─── Mock Data ────────────────────────────────────────────────────────────────
-
-const mockTasks = [
-  {
-    id: 'SWP-101',
-    title: 'Implement Login API endpoint',
-    description:
-      'Create RESTful API endpoint for user authentication using JWT tokens. Include input validation, password hashing with bcrypt, and proper error handling for invalid credentials.',
-    sprint: 'Sprint 3',
-    priority: 'high',
-    status: 'in_progress',
-    dueDate: '2026-03-12',
-    assignee: 'Nguyen Van A',
-    storyPoints: 5,
-    labels: ['backend', 'auth'],
-    createdDate: '2026-03-01',
-    comments: [
-      {
-        author: 'Team Leader',
-        text: 'Please use Spring Security for this module',
-        date: '2026-03-02',
-      },
-      {
-        author: 'Nguyen Van A',
-        text: 'Started coding, expect to finish by Wednesday',
-        date: '2026-03-03',
-      },
-    ],
-  },
-  {
-    id: 'SWP-102',
-    title: 'Design Database Schema for User module',
-    description:
-      'Design and implement database schema for the User module including tables for users, roles, and permissions with proper foreign key constraints.',
-    sprint: 'Sprint 3',
-    priority: 'urgent',
-    status: 'in_review',
-    dueDate: '2026-03-10',
-    assignee: 'Nguyen Van A',
-    storyPoints: 3,
-    labels: ['database', 'design'],
-    createdDate: '2026-02-28',
-    comments: [{ author: 'Lecturer', text: 'Remember to normalize to 3NF', date: '2026-03-01' }],
-  },
-  {
-    id: 'SWP-103',
-    title: 'Write unit tests for Auth Service',
-    description:
-      'Write comprehensive unit tests for the Authentication Service layer covering login, registration, token refresh, and password reset flows.',
-    sprint: 'Sprint 3',
-    priority: 'medium',
-    status: 'todo',
-    dueDate: '2026-03-15',
-    assignee: 'Nguyen Van A',
-    storyPoints: 3,
-    labels: ['testing'],
-    createdDate: '2026-03-03',
-    comments: [],
-  },
-  {
-    id: 'SWP-104',
-    title: 'Setup CI/CD pipeline with GitHub Actions',
-    description:
-      'Configure GitHub Actions workflow for continuous integration. Include build, test, and lint stages. Deploy to staging on merge to develop branch.',
-    sprint: 'Sprint 2',
-    priority: 'low',
-    status: 'done',
-    dueDate: '2026-03-05',
-    assignee: 'Nguyen Van A',
-    storyPoints: 2,
-    labels: ['devops'],
-    createdDate: '2026-02-20',
-    comments: [{ author: 'Team Leader', text: 'LGTM! Merged to develop', date: '2026-03-05' }],
-  },
-  {
-    id: 'SWP-105',
-    title: 'Implement User Registration flow',
-    description:
-      'Build the complete user registration flow including form validation, email verification, and redirect to login page after successful registration.',
-    sprint: 'Sprint 3',
-    priority: 'high',
-    status: 'todo',
-    dueDate: '2026-03-18',
-    assignee: 'Nguyen Van A',
-    storyPoints: 5,
-    labels: ['frontend', 'auth'],
-    createdDate: '2026-03-04',
-    comments: [],
-  },
-  {
-    id: 'SWP-106',
-    title: 'Create API documentation with Swagger',
-    description:
-      'Add Swagger/OpenAPI annotations to all REST endpoints. Configure Swagger UI for easy API exploration and testing.',
-    sprint: 'Sprint 3',
-    priority: 'medium',
-    status: 'in_progress',
-    dueDate: '2026-03-14',
-    assignee: 'Nguyen Van A',
-    storyPoints: 2,
-    labels: ['documentation'],
-    createdDate: '2026-03-05',
-    comments: [],
-  },
-  {
-    id: 'SWP-107',
-    title: 'Fix CORS configuration for frontend',
-    description:
-      'Resolve CORS issues preventing the React frontend from communicating with the Spring Boot backend. Configure allowed origins, headers, and methods.',
-    sprint: 'Sprint 2',
-    priority: 'urgent',
-    status: 'done',
-    dueDate: '2026-03-04',
-    assignee: 'Nguyen Van A',
-    storyPoints: 1,
-    labels: ['bugfix', 'backend'],
-    createdDate: '2026-03-02',
-    comments: [
-      {
-        author: 'Team Leader',
-        text: 'Urgent fix — frontend team is blocked',
-        date: '2026-03-02',
-      },
-    ],
-  },
-];
+// ─── Data Mapping ────────────────────────────────────────────────────────────
+const STATUS_MAP = {
+  'To Do': 'todo',
+  'In Progress': 'in_progress',
+  'In Review': 'in_review',
+  Done: 'done',
+  Closed: 'done',
+  Resolved: 'done',
+};
+const UI_TO_JIRA_STATUS = {
+  todo: 'To Do',
+  in_progress: 'In Progress',
+  in_review: 'In Review',
+  done: 'Done',
+};
+const PRIORITY_MAP = {
+  Highest: 'urgent',
+  High: 'high',
+  Medium: 'medium',
+  Low: 'low',
+  Lowest: 'low',
+};
+const mapIssue = (issue) => ({
+  id: issue.issue_key,
+  jiraIssueId: issue.jira_issue_id,
+  title: issue.summary,
+  description: issue.issue_type || '',
+  sprint: '',
+  priority: PRIORITY_MAP[issue.priority] || 'medium',
+  status: STATUS_MAP[issue.status] || 'todo',
+  dueDate: '',
+  assignee: issue.assignee_email || 'Unassigned',
+  storyPoints: 0,
+  labels: issue.issue_type ? [issue.issue_type] : [],
+  createdDate: issue.created_at,
+  comments: [],
+});
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -227,13 +148,119 @@ function isOverdue(dateStr, status) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function MemberTasksPage() {
+  const user = useSelector(selectCurrentUser);
+  const activeGroupId = useSelector((state) => state.ui?.activeGroupId);
+  const groupIdFromUser =
+    activeGroupId ||
+    user?.groups?.[0]?.group_id ||
+    user?.group_memberships?.[0]?.group_id ||
+    user?.group_memberships?.[0]?.student_group?.group_id ||
+    user?.group_leaderships?.[0]?.group_id;
+
+  const [groupId, setGroupId] = useState(groupIdFromUser ? Number(groupIdFromUser) : null);
+
+  const [tasks, setTasks] = useState([]);
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTask, setSelectedTask] = useState(null);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolveGroup = async () => {
+      if (groupIdFromUser) {
+        if (!cancelled) setGroupId(Number(groupIdFromUser));
+        return;
+      }
+
+      try {
+        const res = await getGroupsApi();
+        const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+        const firstGroupId = list?.[0]?.group_id || list?.[0]?.id || null;
+        if (!cancelled) setGroupId(firstGroupId ? Number(firstGroupId) : null);
+      } catch {
+        if (!cancelled) setGroupId(null);
+      }
+    };
+
+    resolveGroup();
+    return () => {
+      cancelled = true;
+    };
+  }, [groupIdFromUser]);
+
+  const fetchTasks = useCallback(async () => {
+    if (!groupId) return;
+    try {
+      const res = await getJiraIssuesApi(groupId);
+      const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+      // Filter by current user email
+      const myIssues = user?.email ? list.filter((i) => i.assignee_email === user.email) : list;
+      setTasks(myIssues.map(mapIssue));
+    } catch {
+      /* empty */
+    }
+  }, [groupId, user?.email]);
+
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
+
+  // Update task status
+  const handleStatusChange = async (issueId, newStatus) => {
+    if (!groupId) {
+      toast.warning('Bạn chưa thuộc nhóm nào.');
+      return false;
+    }
+    try {
+      await updateIssueStatusApi(groupId, issueId, { status: newStatus });
+      toast.success('Cập nhật trạng thái thành công!');
+      await fetchTasks();
+      return true;
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Cập nhật trạng thái thất bại');
+      return false;
+    }
+  };
+
+  // Sync from Jira
+  const [syncing, setSyncing] = useState(false);
+  const handleSync = async () => {
+    if (!groupId) {
+      toast.warning('Bạn chưa thuộc nhóm nào. Liên hệ Admin để được thêm vào nhóm.');
+      return;
+    }
+    setSyncing(true);
+    try {
+      await syncJiraIssuesApi(groupId);
+      toast.success('Đồng bộ Jira thành công!');
+      fetchTasks();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Đồng bộ thất bại');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleSelectedTaskStatusChange = async (uiStatus) => {
+    if (!selectedTask) return;
+
+    const jiraStatus = UI_TO_JIRA_STATUS[uiStatus];
+    if (!jiraStatus) return;
+
+    const issueRef = selectedTask.jiraIssueId || selectedTask.id;
+    const updated = await handleStatusChange(issueRef, jiraStatus);
+    if (!updated) return;
+
+    setSelectedTask((prev) => (prev ? { ...prev, status: uiStatus } : prev));
+    setTasks((prev) =>
+      prev.map((task) => (task.id === selectedTask.id ? { ...task, status: uiStatus } : task)),
+    );
+  };
+
   // Filter logic
-  const filteredTasks = mockTasks.filter((task) => {
+  const filteredTasks = tasks.filter((task) => {
     if (statusFilter !== 'all' && task.status !== statusFilter) return false;
     if (priorityFilter !== 'all' && task.priority !== priorityFilter) return false;
     if (searchQuery && !task.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
@@ -244,7 +271,7 @@ export function MemberTasksPage() {
   const stats = [
     {
       title: 'Total Tasks',
-      value: mockTasks.length,
+      value: tasks.length,
       icon: ListTodo,
       color: 'text-primary',
       bgColor: 'bg-primary/10',
@@ -254,7 +281,7 @@ export function MemberTasksPage() {
     },
     {
       title: 'In Progress',
-      value: mockTasks.filter((t) => t.status === 'in_progress').length,
+      value: tasks.filter((t) => t.status === 'in_progress').length,
       icon: Clock,
       color: 'text-[var(--warning)]',
       bgColor: 'bg-[var(--warning)]/10',
@@ -264,7 +291,7 @@ export function MemberTasksPage() {
     },
     {
       title: 'Completed',
-      value: mockTasks.filter((t) => t.status === 'done').length,
+      value: tasks.filter((t) => t.status === 'done').length,
       icon: CheckCircle2,
       color: 'text-[var(--success)]',
       bgColor: 'bg-[var(--success)]/10',
@@ -274,7 +301,7 @@ export function MemberTasksPage() {
     },
     {
       title: 'Overdue',
-      value: mockTasks.filter((t) => isOverdue(t.dueDate, t.status)).length,
+      value: tasks.filter((t) => isOverdue(t.dueDate, t.status)).length,
       icon: AlertCircle,
       color: 'text-destructive',
       bgColor: 'bg-destructive/10',
@@ -287,7 +314,16 @@ export function MemberTasksPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <PageHeader title="My Tasks" description="List of tasks assigned to you from Jira." />
+      <PageHeader
+        title="My Tasks"
+        description="List of tasks assigned to you from Jira."
+        actions={
+          <Button variant="outline" onClick={handleSync} disabled={syncing}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+            Sync Jira
+          </Button>
+        }
+      />
 
       {/* Stats */}
       <Card>
@@ -332,7 +368,7 @@ export function MemberTasksPage() {
               <Filter size={16} />
               <span className="font-medium">Filters:</span>
             </div>
-            <div className="relative flex-1 min-w-[200px] max-w-sm">
+            <div className="relative flex-1 min-w-50 max-w-sm">
               <Search
                 size={16}
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
@@ -500,6 +536,21 @@ export function MemberTasksPage() {
                 <Badge variant="outline" className="font-mono">
                   SP: {selectedTask.storyPoints}
                 </Badge>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="text-sm font-semibold">Update Status</h4>
+                <Select value={selectedTask.status} onValueChange={handleSelectedTaskStatusChange}>
+                  <SelectTrigger className="w-52">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todo">To Do</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="in_review">In Review</SelectItem>
+                    <SelectItem value="done">Done</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <Separator />
