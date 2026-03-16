@@ -13,8 +13,8 @@ const router = Router();
 
 router.use(protect);
 
-// GET  /api/users       → ADMIN only (danh sách users, hỗ trợ ?role=MEMBER)
-router.get("/", authorize("ADMIN"), getUsers);
+// GET  /api/users       → ADMIN + LECTURER (danh sách users, hỗ trợ ?role=MEMBER)
+router.get("/", authorize("ADMIN", "LECTURER"), getUsers);
 
 // GET  /api/users/:id   → ADMIN hoặc chính user đó
 router.get("/:id", getUserById);
