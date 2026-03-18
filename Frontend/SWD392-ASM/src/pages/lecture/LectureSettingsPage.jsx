@@ -39,7 +39,7 @@ export function LectureSettingsPage() {
   const [jiraSaving, setJiraSaving] = useState(false);
 
   // ── GitHub config state ──
-  const [githubConfig, setGithubConfig] = useState({ repo_url: '', github_token: '' });
+  const [githubConfig, setGithubConfig] = useState({ owner: '', repo_name: '', repo_url: '', github_pat: '' });
   const [githubConnected, setGithubConnected] = useState(false);
   const [githubSaving, setGithubSaving] = useState(false);
 
@@ -88,14 +88,21 @@ export function LectureSettingsPage() {
     // GitHub config
     try {
       const res = await getGitHubConfigApi(gid);
-      const data = res?.data || res || {};
-      setGithubConfig({
-        repo_url: data.repo_url || data.github_repo_url || '',
-        github_token: data.github_token ? '••••••••' : '',
-      });
-      setGithubConnected(!!(data.repo_url || data.github_repo_url));
+      const ghData = res?.data || res;
+      if (ghData) {
+        setGithubConfig({
+          owner: ghData.owner || '',
+          repo_name: ghData.repo_name || '',
+          repo_url: ghData.repo_url || '',
+          github_pat: ghData.github_pat ? '••••••••' : '',
+        });
+        setGithubConnected(!!ghData.repo_url);
+      } else {
+        setGithubConfig({ owner: '', repo_name: '', repo_url: '', github_pat: '' });
+        setGithubConnected(false);
+      }
     } catch {
-      setGithubConfig({ repo_url: '', github_token: '' });
+      setGithubConfig({ owner: '', repo_name: '', repo_url: '', github_pat: '' });
       setGithubConnected(false);
     }
   }, [selectedGroup]);
@@ -127,7 +134,9 @@ export function LectureSettingsPage() {
     setGithubSaving(true);
     try {
       const payload = { ...githubConfig };
-      if (payload.github_token === '••••••••') delete payload.github_token;
+      // Don't send masked token
+      if (payload.github_pat === '••••••••') delete payload.github_pat;
+
       await configureGitHubApi(Number(selectedGroup), payload);
       toast.success('Cấu hình GitHub đã lưu!');
       setGithubConnected(true);
@@ -273,22 +282,40 @@ export function LectureSettingsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-2">
-                <Label htmlFor="github-repo">Repository URL</Label>
+                <Label htmlFor="github-owner">Owner (GitHub username hoặc org)</Label>
                 <Input
-                  id="github-repo"
-                  placeholder="https://github.com/org/repo"
+                  id="github-owner"
+                  placeholder="longdevlife"
+                  value={githubConfig.owner}
+                  onChange={(e) => setGithubConfig((p) => ({ ...p, owner: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="github-repo-name">Repository Name</Label>
+                <Input
+                  id="github-repo-name"
+                  placeholder="swd-be"
+                  value={githubConfig.repo_name}
+                  onChange={(e) => setGithubConfig((p) => ({ ...p, repo_name: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="github-repo-url">Repository URL</Label>
+                <Input
+                  id="github-repo-url"
+                  placeholder="https://github.com/longdevlife/swd-be"
                   value={githubConfig.repo_url}
                   onChange={(e) => setGithubConfig((p) => ({ ...p, repo_url: e.target.value }))}
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="github-token">GitHub Personal Access Token</Label>
+                <Label htmlFor="github-pat">GitHub Personal Access Token</Label>
                 <Input
-                  id="github-token"
+                  id="github-pat"
                   type="password"
                   placeholder="ghp_xxxxxxxxxxxx"
-                  value={githubConfig.github_token}
-                  onChange={(e) => setGithubConfig((p) => ({ ...p, github_token: e.target.value }))}
+                  value={githubConfig.github_pat}
+                  onChange={(e) => setGithubConfig((p) => ({ ...p, github_pat: e.target.value }))}
                 />
               </div>
               <Separator />
