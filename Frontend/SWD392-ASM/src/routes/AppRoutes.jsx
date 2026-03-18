@@ -55,6 +55,7 @@ export function AppRoutes() {
         {/* Leader Routes */}
         <Route path="/leader/tasks" element={<LeaderTasksPage />} />
         <Route path="/leader/reports" element={<LeaderReportsPage />} />
+        <Route path="/leader/settings" element={<LectureSettingsPage />} />
 
         {/* Admin Routes — ROLE_ADMIN only */}
         <Route
