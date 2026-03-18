@@ -12,7 +12,7 @@ router.get("/me", protect, getMe);
 
 // ── Google OAuth ──────────────────────────────────
 // Bước 1: Redirect sang Google để xin quyền
-router.get("/google", passport.authenticate("google", { scope: ["profile", "email"] }));
+router.get("/google", passport.authenticate("google", { scope: ["profile", "email"], state: false }));
 
 // Bước 2: Google redirect về đây sau khi user đồng ý
 router.get(

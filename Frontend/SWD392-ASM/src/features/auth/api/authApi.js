@@ -14,7 +14,10 @@ export const getMeApi = () =>
 
 // Google OAuth: redirect trực tiếp đến backend passport route
 // axiosClient.baseURL = /api, nhưng đây là window.location.href nên cần full path
-export const getGoogleLoginUrl = () => '/api/auth/google';
+export const getGoogleLoginUrl = () => {
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+  return `${baseUrl}/auth/google`;
+};
 
 // Exchange code for token (nếu backend trả code thay vì redirect trực tiếp)
 export const handleGoogleCallback = (code) =>
