@@ -3,10 +3,8 @@ import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import prisma from "./db.js";
 
 // Build absolute callback URL for Vercel serverless compatibility
+// GOOGLE_CALLBACK_URL must be set as env var on Vercel dashboard
 const getCallbackURL = () => {
-  if (process.env.VERCEL_URL) {
-    return `https://${process.env.VERCEL_URL}/api/auth/google/callback`;
-  }
   return process.env.GOOGLE_CALLBACK_URL || "http://localhost:5000/api/auth/google/callback";
 };
 
