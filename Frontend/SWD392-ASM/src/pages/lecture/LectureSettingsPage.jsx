@@ -126,8 +126,28 @@ export function LectureSettingsPage() {
     if (!selectedGroup) return;
     setGithubSaving(true);
     try {
-      const payload = { ...githubConfig };
-      if (payload.github_token === '••••••••') delete payload.github_token;
+      // Parse repo_url to extract owner and repo_name
+      // e.g. "https://github.com/longdevlife/swd-be" → owner="longdevlife", repo_name="swd-be"
+      const url = githubConfig.repo_url.trim().replace(/\/+$/, '');
+      const parts = url.split('/');
+      const repo_name = parts.pop();
+      const owner = parts.pop();
+
+      if (!owner || !repo_name) {
+        toast.error('URL không hợp lệ. Ví dụ: https://github.com/owner/repo');
+        setGithubSaving(false);
+        return;
+      }
+
+      const payload = {
+        repo_name,
+        repo_url: githubConfig.repo_url.trim(),
+        owner,
+        github_pat: githubConfig.github_token,
+      };
+      // Don't send masked token
+      if (payload.github_pat === '••••••••') delete payload.github_pat;
+
       await configureGitHubApi(Number(selectedGroup), payload);
       toast.success('Cấu hình GitHub đã lưu!');
       setGithubConnected(true);
