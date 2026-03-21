@@ -1,20 +1,64 @@
-import { useState, useEffect } from 'react';
+import { Component, useEffect, useState } from 'react';
+import {
+  Github,
+  GitBranch,
+  GitCommit,
+  Calendar,
+  User as UserIcon,
+  CheckCircle2,
+  XCircle,
+  RefreshCw,
+  Link as LinkIcon,
+  ExternalLink,
+  Trash2,
+} from 'lucide-react';
+import { useSelector } from 'react-redux';
+import { toast } from 'sonner';
+
 import { PageHeader } from '@/components/PageHeader';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Github, GitBranch, GitCommit, Calendar, User as UserIcon, CheckCircle2, XCircle, RefreshCw, Link as LinkIcon, ExternalLink, Trash2 } from 'lucide-react';
-import { useSelector } from 'react-redux';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { selectCurrentUser } from '@/stores/authSlice';
-import { getGitHubConfigApi, getCommitsApi, syncCommitsApi, configureGitHubApi } from '@/features/github/api/githubApi';
+import {
+  getGitHubConfigApi,
+  getCommitsApi,
+  syncCommitsApi,
+  configureGitHubApi,
+} from '@/features/github/api/githubApi';
 import { getGroupsApi } from '@/features/groups/api/groupsApi';
-import { toast } from 'sonner';
-import { Component } from 'react';
+
+const unwrapApiData = (response) => {
+  if (response && Object.prototype.hasOwnProperty.call(response, 'data')) {
+    return response.data;
+  }
+  return response;
+};
 
 // Error Boundary wrapper
 class GitHubErrorBoundary extends Component {
@@ -68,15 +112,19 @@ function GitHubConnectorPageInner() {
     const loadData = async () => {
       try {
         const groupsRes = await getGroupsApi().catch(() => ({ data: [] }));
-        const groupsList = Array.isArray(groupsRes?.data) ? groupsRes.data : Array.isArray(groupsRes) ? groupsRes : [];
+        const groupsList = Array.isArray(groupsRes?.data)
+          ? groupsRes.data
+          : Array.isArray(groupsRes)
+            ? groupsRes
+            : [];
         const repos = [];
         const allCommits = [];
         for (const g of groupsList) {
           const gid = g.group_id || g.id;
           try {
             const cfg = await getGitHubConfigApi(gid).catch(() => null);
-            if (cfg?.data || cfg) {
-              const config = cfg?.data || cfg;
+            const config = unwrapApiData(cfg);
+            if (config) {
               repos.push({
                 id: gid,
                 studentName: g.group_name || g.name || `Group ${gid}`,
@@ -89,36 +137,50 @@ function GitHubConnectorPageInner() {
                 branch: config.branch || 'main',
               });
             }
-          } catch { /* skip */ }
+          } catch {
+            /* skip */
+          }
           try {
             const commitsRes = await getCommitsApi(gid).catch(() => ({ data: [] }));
-            const cList = Array.isArray(commitsRes?.data) ? commitsRes.data : Array.isArray(commitsRes) ? commitsRes : [];
+            const unwrappedCommits = unwrapApiData(commitsRes);
+            const cList = Array.isArray(unwrappedCommits) ? unwrappedCommits : [];
             cList.forEach((c) => {
               allCommits.push({
-                id: c.id || c.commit_sha || `${gid}-${allCommits.length}`,
+                id: c.commit_id || c.id || c.commit_hash || `${gid}-${allCommits.length}`,
                 studentName: g.group_name || g.name || '',
                 studentId: `GRP-${gid}`,
                 message: c.message || c.commit_message || '',
-                author: c.author_name || (typeof c.author === 'object' ? (c.author?.full_name || c.author?.github_username || c.author?.email) : c.author) || '',
+                author:
+                  c.author_name ||
+                  (typeof c.author === 'object'
+                    ? c.author?.full_name || c.author?.github_username || c.author?.email
+                    : c.author) ||
+                  '',
                 date: c.committed_at || c.created_at || '',
-                sha: (c.sha || c.commit_sha || '').slice(0, 7),
+                sha: (c.sha || c.commit_hash || c.commit_sha || '').slice(0, 7),
                 branch: c.branch || 'main',
-                additions: c.additions || 0,
-                deletions: c.deletions || 0,
+                additions: c.additions || c.lines_added || 0,
+                deletions: c.deletions || c.lines_deleted || 0,
               });
             });
             const r = repos.find((r) => r.id === gid);
             if (r) r.totalCommits = cList.length;
-          } catch { /* skip */ }
+          } catch {
+            /* skip */
+          }
         }
         if (!cancelled) {
           setConnectedRepos(repos);
           setCommits(allCommits);
         }
-      } catch { /* empty */ }
+      } catch {
+        /* empty */
+      }
     };
     loadData();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // New repo form state
@@ -126,7 +188,7 @@ function GitHubConnectorPageInner() {
     studentName: '',
     studentId: '',
     repoUrl: '',
-    branch: 'main'
+    branch: 'main',
   });
 
   const handleSaveToken = async () => {
@@ -135,7 +197,22 @@ function GitHubConnectorPageInner() {
     const gid = connectedRepos[0]?.id;
     if (gid) {
       try {
-        await configureGitHubApi(gid, { github_token: githubToken.trim() });
+        const configRes = await getGitHubConfigApi(gid);
+        const currentConfig = unwrapApiData(configRes);
+
+        if (!currentConfig?.repo_name || !currentConfig?.repo_url || !currentConfig?.owner) {
+          toast.error(
+            'Nhóm chưa có repo_name/repo_url/owner. Hãy cấu hình đầy đủ ở Settings trước.',
+          );
+          return;
+        }
+
+        await configureGitHubApi(gid, {
+          repo_name: currentConfig.repo_name,
+          repo_url: currentConfig.repo_url,
+          owner: currentConfig.owner,
+          github_pat: githubToken.trim(),
+        });
         setIsTokenSaved(true);
         toast.success('GitHub token saved!');
       } catch {
@@ -150,29 +227,36 @@ function GitHubConnectorPageInner() {
     setSyncingRepoId(repoId);
     try {
       await syncCommitsApi(repoId);
-      setConnectedRepos(repos => repos.map(repo =>
-        repo.id === repoId
-          ? { ...repo, lastSync: new Date().toISOString(), status: 'connected' }
-          : repo
-      ));
+      setConnectedRepos((repos) =>
+        repos.map((repo) =>
+          repo.id === repoId
+            ? { ...repo, lastSync: new Date().toISOString(), status: 'connected' }
+            : repo,
+        ),
+      );
       toast.success('Sync completed!');
       // Refresh commits for this group
       const commitsRes = await getCommitsApi(repoId).catch(() => ({ data: [] }));
-      const cList = Array.isArray(commitsRes?.data) ? commitsRes.data : [];
+      const cList = Array.isArray(unwrapApiData(commitsRes)) ? unwrapApiData(commitsRes) : [];
       // Update global commits list
       setCommits((prev) => {
         const filtered = prev.filter((c) => c.studentId !== `GRP-${repoId}`);
         const newCommits = cList.map((c) => ({
-          id: c.id || c.commit_sha,
-          studentName: connectedRepos.find(r => r.id === repoId)?.studentName || '',
+          id: c.commit_id || c.id || c.commit_hash,
+          studentName: connectedRepos.find((r) => r.id === repoId)?.studentName || '',
           studentId: `GRP-${repoId}`,
           message: c.message || c.commit_message || '',
-          author: c.author_name || (typeof c.author === 'object' ? (c.author?.full_name || c.author?.github_username || c.author?.email) : c.author) || '',
+          author:
+            c.author_name ||
+            (typeof c.author === 'object'
+              ? c.author?.full_name || c.author?.github_username || c.author?.email
+              : c.author) ||
+            '',
           date: c.committed_at || c.created_at || '',
-          sha: (c.sha || c.commit_sha || '').slice(0, 7),
+          sha: (c.sha || c.commit_hash || c.commit_sha || '').slice(0, 7),
           branch: c.branch || 'main',
-          additions: c.additions || 0,
-          deletions: c.deletions || 0,
+          additions: c.additions || c.lines_added || 0,
+          deletions: c.deletions || c.lines_deleted || 0,
         }));
         return [...newCommits, ...filtered];
       });
@@ -191,7 +275,7 @@ function GitHubConnectorPageInner() {
         repoName,
         status: 'connected',
         lastSync: new Date().toLocaleString('sv-SE').replace('T', ' ').slice(0, -3),
-        totalCommits: 0
+        totalCommits: 0,
       };
       setConnectedRepos([...connectedRepos, newRepoData]);
       setIsAddRepoDialogOpen(false);
@@ -200,16 +284,17 @@ function GitHubConnectorPageInner() {
   };
 
   const handleRemoveRepo = (repoId) => {
-    setConnectedRepos(repos => repos.filter(repo => repo.id !== repoId));
+    setConnectedRepos((repos) => repos.filter((repo) => repo.id !== repoId));
   };
 
-  const filteredCommits = selectedStudent === 'all' 
-    ? commits 
-    : commits.filter(commit => commit.studentId === selectedStudent);
+  const filteredCommits =
+    selectedStudent === 'all'
+      ? commits
+      : commits.filter((commit) => commit.studentId === selectedStudent);
 
   const totalCommits = connectedRepos.reduce((sum, repo) => sum + repo.totalCommits, 0);
-  const activeRepos = connectedRepos.filter(repo => repo.status === 'connected').length;
-  const errorRepos = connectedRepos.filter(repo => repo.status === 'error').length;
+  const activeRepos = connectedRepos.filter((repo) => repo.status === 'connected').length;
+  const errorRepos = connectedRepos.filter((repo) => repo.status === 'error').length;
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -234,7 +319,8 @@ function GitHubConnectorPageInner() {
             GitHub Personal Access Token
           </CardTitle>
           <CardDescription>
-            Enter your GitHub Personal Access Token to enable repository synchronization and commit tracking
+            Enter your GitHub Personal Access Token to enable repository synchronization and commit
+            tracking
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -255,7 +341,8 @@ function GitHubConnectorPageInner() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Create token at: Settings → Developer settings → Personal access tokens → Tokens (classic)
+            Create token at: Settings → Developer settings → Personal access tokens → Tokens
+            (classic)
           </p>
           {isTokenSaved && (
             <div className="flex items-center gap-2 text-sm text-green-600">
@@ -336,9 +423,9 @@ function GitHubConnectorPageInner() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <a 
-                        href={repo.repoUrl} 
-                        target="_blank" 
+                      <a
+                        href={repo.repoUrl}
+                        target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-1 text-blue-600 hover:underline"
                       >
@@ -369,9 +456,7 @@ function GitHubConnectorPageInner() {
                     <TableCell>
                       <span className="font-medium">{repo.totalCommits}</span>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {repo.lastSync}
-                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{repo.lastSync}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         <Button
@@ -381,7 +466,10 @@ function GitHubConnectorPageInner() {
                           disabled={syncingRepoId === repo.id}
                           className="gap-1"
                         >
-                          <RefreshCw size={14} className={syncingRepoId === repo.id ? 'animate-spin' : ''} />
+                          <RefreshCw
+                            size={14}
+                            className={syncingRepoId === repo.id ? 'animate-spin' : ''}
+                          />
                           Sync
                         </Button>
                         <Button
@@ -542,9 +630,7 @@ function GitHubConnectorPageInner() {
             <Button variant="outline" onClick={() => setIsAddRepoDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleAddRepo}>
-              Add Repository
-            </Button>
+            <Button onClick={handleAddRepo}>Add Repository</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
