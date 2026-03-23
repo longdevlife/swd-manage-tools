@@ -21,6 +21,13 @@ import { getGroupsApi } from '@/features/groups/api/groupsApi';
 import { getJiraConfigApi, configureJiraApi } from '@/features/jira/api/jiraApi';
 import { getGitHubConfigApi, configureGitHubApi } from '@/features/github/api/githubApi';
 
+const unwrapApiData = (response) => {
+  if (response && Object.prototype.hasOwnProperty.call(response, 'data')) {
+    return response.data;
+  }
+  return response;
+};
+
 export function LectureSettingsPage() {
   const user = useSelector(selectCurrentUser);
   const activeGroupId = useSelector((state) => state.ui?.activeGroupId);
@@ -39,7 +46,12 @@ export function LectureSettingsPage() {
   const [jiraSaving, setJiraSaving] = useState(false);
 
   // ── GitHub config state ──
-  const [githubConfig, setGithubConfig] = useState({ owner: '', repo_name: '', repo_url: '', github_pat: '' });
+  const [githubConfig, setGithubConfig] = useState({
+    owner: '',
+    repo_name: '',
+    repo_url: '',
+    github_pat: '',
+  });
   const [githubConnected, setGithubConnected] = useState(false);
   const [githubSaving, setGithubSaving] = useState(false);
 
@@ -73,7 +85,7 @@ export function LectureSettingsPage() {
     // Jira config
     try {
       const res = await getJiraConfigApi(gid);
-      const data = res?.data || res || {};
+      const data = unwrapApiData(res) || {};
       setJiraConfig({
         base_url: data.base_url || data.jira_base_url || '',
         project_key: data.project_key || data.jira_project_key || '',
@@ -88,7 +100,7 @@ export function LectureSettingsPage() {
     // GitHub config
     try {
       const res = await getGitHubConfigApi(gid);
-      const ghData = res?.data || res;
+      const ghData = unwrapApiData(res);
       if (ghData) {
         setGithubConfig({
           owner: ghData.owner || '',

@@ -7,6 +7,9 @@ import prisma from "../config/db.js";
 import JiraAdapter from "./jiraAdapter.js";
 import GitHubAdapter from "./githubAdapter.js";
 import { decrypt } from "../utils/encryption.js";
+import { matchCommitAuthorToMember } from "../utils/githubAuthorMatcher.js";
+
+const ISSUE_KEY_PATTERN = /\b[A-Z][A-Z0-9]+-\d+\b/gi;
 
 /**
  * Sync đầy đủ cho 1 nhóm: Flow 3 hoàn chỉnh
@@ -36,7 +39,7 @@ export const syncGroup = async (groupId) => {
       const jiraAdapter = new JiraAdapter(
         jiraConfig.base_url,
         jiraConfig.jira_email,
-        decryptedToken
+        decryptedToken,
       );
 
       const jiraIssues = await jiraAdapter.getAllIssues(jiraConfig.project_key);
@@ -97,11 +100,7 @@ export const syncGroup = async (groupId) => {
 
     if (gitConfig) {
       const decryptedPat = decrypt(gitConfig.github_pat);
-      const githubAdapter = new GitHubAdapter(
-        gitConfig.owner,
-        gitConfig.repo_name,
-        decryptedPat
-      );
+      const githubAdapter = new GitHubAdapter(gitConfig.owner, gitConfig.repo_name, decryptedPat);
 
       // Incremental sync
       const latestCommit = await prisma.commit_Record.findFirst({
@@ -109,14 +108,13 @@ export const syncGroup = async (groupId) => {
         orderBy: { committed_at: "desc" },
       });
 
-      const since = latestCommit
-        ? new Date(latestCommit.committed_at).toISOString()
-        : null;
+      const since = latestCommit ? new Date(latestCommit.committed_at).toISOString() : null;
 
       const githubCommits = await githubAdapter.getAllCommits(since);
 
       let ghCreated = 0;
       let ghSkipped = 0;
+      let ghUnmatched = 0;
       let linkedIssues = 0;
 
       // Lấy members để match author
@@ -147,22 +145,8 @@ export const syncGroup = async (groupId) => {
           continue;
         }
 
-        // Match author
-        const authorLogin = commit.author?.login;
-        const authorEmail = commit.commit?.author?.email;
-
-        const matchedMember = members.find(
-          (m) =>
-            (m.user.github_username &&
-              m.user.github_username.toLowerCase() ===
-                authorLogin?.toLowerCase()) ||
-            m.user.email.toLowerCase() === authorEmail?.toLowerCase()
-        );
-
-        if (!matchedMember) {
-          ghSkipped++;
-          continue;
-        }
+        const match = matchCommitAuthorToMember(commit, members);
+        const matchedMember = match.member;
 
         // Lấy commit detail (stats)
         let stats = { additions: 0, deletions: 0 };
@@ -177,27 +161,34 @@ export const syncGroup = async (groupId) => {
         const commitRecord = await prisma.commit_Record.create({
           data: {
             repo_id: gitConfig.repo_id,
-            author_id: matchedMember.user.user_id,
+            author_id: matchedMember?.user?.user_id || null,
+            author_login: match.metadata.authorLogin,
+            author_email: match.metadata.authorEmail,
+            author_name: match.metadata.authorName,
+            match_status: match.match_status,
+            match_reason: match.match_reason,
             commit_hash: sha,
             commit_message: (commit.commit?.message || "").slice(0, 500),
-            committed_at: new Date(
-              commit.commit?.author?.date || commit.commit?.committer?.date
-            ),
+            committed_at: new Date(commit.commit?.author?.date || commit.commit?.committer?.date),
             lines_added: stats.additions || 0,
             lines_deleted: stats.deletions || 0,
           },
         });
         ghCreated++;
 
+        if (!matchedMember) {
+          ghUnmatched++;
+        }
+
         // Flow 4: Auto-link Commit ↔ Jira Issue
         if (jiraProject && jiraProject.jira_issues.length > 0) {
-          const issueKeyPattern = /[A-Z]+-\d+/g;
-          const matches = commitRecord.commit_message?.match(issueKeyPattern);
+          const matches = commitRecord.commit_message?.match(ISSUE_KEY_PATTERN);
 
           if (matches) {
-            for (const issueKey of matches) {
+            for (const issueKeyRaw of matches) {
+              const issueKey = issueKeyRaw.toUpperCase();
               const jiraIssue = jiraProject.jira_issues.find(
-                (ji) => ji.issue_key === issueKey
+                (ji) => ji.issue_key.toUpperCase() === issueKey,
               );
 
               if (jiraIssue) {
@@ -229,6 +220,7 @@ export const syncGroup = async (groupId) => {
         total_from_github: githubCommits.length,
         created: ghCreated,
         skipped: ghSkipped,
+        unmatched: ghUnmatched,
         linked_issues: linkedIssues,
       };
     } else {
@@ -260,7 +252,9 @@ export const syncGroup = async (groupId) => {
 
       for (const userId of memberIds) {
         // GitHub stats
-        let totalCommits = 0, totalLinesAdded = 0, totalLinesDeleted = 0;
+        let totalCommits = 0,
+          totalLinesAdded = 0,
+          totalLinesDeleted = 0;
 
         if (gitConfig) {
           const commitStats = await prisma.commit_Record.aggregate({
@@ -343,10 +337,7 @@ export const syncAllGroups = async () => {
   // Lấy tất cả nhóm đã cấu hình ít nhất 1 trong 2 (Jira hoặc GitHub)
   const groups = await prisma.student_Group.findMany({
     where: {
-      OR: [
-        { jira_project: { isNot: null } },
-        { git_repository: { isNot: null } },
-      ],
+      OR: [{ jira_project: { isNot: null } }, { git_repository: { isNot: null } }],
     },
     select: { group_id: true, group_name: true },
   });
@@ -358,7 +349,7 @@ export const syncAllGroups = async () => {
     const result = await syncGroup(group.group_id);
     allResults.push({ group_name: group.group_name, ...result });
     console.log(
-      `✅ Group ${group.group_name}: Jira=${JSON.stringify(result.jira)}, GitHub=${JSON.stringify(result.github)}, Reports=${JSON.stringify(result.reports)}`
+      `✅ Group ${group.group_name}: Jira=${JSON.stringify(result.jira)}, GitHub=${JSON.stringify(result.github)}, Reports=${JSON.stringify(result.reports)}`,
     );
   }
 

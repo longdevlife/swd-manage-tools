@@ -135,7 +135,12 @@ model Git_Repository {
 model Commit_Record {
   commit_id      Int      @id @default(autoincrement())
   repo_id        Int
-  author_id      Int
+  author_id      Int?
+  author_login   String?  @db.VarChar(100)
+  author_name    String?  @db.VarChar(150)
+  author_email   String?  @db.VarChar(150)
+  match_status   String   @default("matched") @db.VarChar(30)
+  match_reason   String?  @db.VarChar(50)
   commit_hash    String   @unique @db.VarChar(100)
   commit_message String?  @db.VarChar(500)
   committed_at   DateTime
@@ -143,7 +148,7 @@ model Commit_Record {
   lines_deleted  Int      @default(0)
 
   git_repository Git_Repository @relation(fields: [repo_id], references: [repo_id], onDelete: Cascade)
-  author         User           @relation(fields: [author_id], references: [user_id], onDelete: Cascade)
+  author         User?          @relation(fields: [author_id], references: [user_id], onDelete: SetNull)
   commit_issues  Commit_Issue[]
 }
 

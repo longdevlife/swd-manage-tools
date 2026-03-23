@@ -15,7 +15,6 @@ import { MemberStatsPage } from '@/pages/member/MemberStatsPage';
 import { MemberTasksPage } from '@/pages/member/MemberTasksPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import { ProfilePage } from '@/pages/ProfilePage';
-import { TasksPage } from '@/pages/TasksPage';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 
 export function AppRoutes() {
@@ -38,7 +37,6 @@ export function AppRoutes() {
         }
       >
         <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/tasks" element={<TasksPage />} />
 
         {/* Profile Routes */}
         <Route path="/profile" element={<ProfilePage />} />
@@ -74,4 +72,3 @@ export function AppRoutes() {
     </Routes>
   );
 }
-
